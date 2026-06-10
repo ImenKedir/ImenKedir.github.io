@@ -5,7 +5,7 @@ Run with:  pytest snake_world_model/test_env.py
 
 import numpy as np
 
-from env import FOOD, HEAD, SnakeEnv
+from env import FOOD, GRID_SIZE, HEAD, SnakeEnv
 
 
 def test_reset_returns_10x10_grid():
@@ -40,7 +40,7 @@ def test_wall_collision_ends_episode():
     # Snake starts in the middle facing right. Drive it straight into the right
     # wall; within grid_size steps it must hit the wall and end the episode.
     done = False
-    for _ in range(env.grid_size):
+    for _ in range(GRID_SIZE):
         _grid, reward, done, _info = env.step(3)  # keep moving right
         if done:
             break
