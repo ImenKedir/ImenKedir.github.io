@@ -51,17 +51,29 @@ class SnakeEnv:
         return self._build_grid(), 0.0, False, {}
 
     def render_ascii(self) -> str:
+        obs = self._build_grid()
+        # Recover a scalar label per cell from the one-hot channels.
+        labels = obs.argmax(axis=-1)  # shape (GRID_SIZE, GRID_SIZE)
         symbols = {EMPTY: ".", BODY: "o", HEAD: "H", FOOD: "*"}
-        rows = ["".join(symbols[int(cell)] for cell in row) for row in self._build_grid()]
+        rows = ["".join(symbols[int(cell)] for cell in row) for row in labels]
         return "\n".join(rows)
 
     def _build_grid(self) -> np.ndarray:
-        grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
+        """Return a (GRID_SIZE, GRID_SIZE, 4) float32 one-hot tensor.
+
+        Channel order matches the constants: EMPTY=0, BODY=1, HEAD=2, FOOD=3.
+        Every cell has exactly one channel set to 1.0.
+        """
+        obs = np.zeros((GRID_SIZE, GRID_SIZE, 4), dtype=np.float32)
+        obs[:, :, EMPTY] = 1.0          # all cells start as empty
         for cell in self._snake[1:]:
-            grid[cell] = BODY
-        grid[self._food] = FOOD
-        grid[self._snake[0]] = HEAD
-        return grid
+            obs[cell][EMPTY] = 0.0
+            obs[cell][BODY] = 1.0
+        obs[self._food][EMPTY] = 0.0
+        obs[self._food][FOOD] = 1.0
+        obs[self._snake[0]][EMPTY] = 0.0
+        obs[self._snake[0]][HEAD] = 1.0
+        return obs
 
     def _place_food(self) -> None:
         occupied = set(self._snake)
