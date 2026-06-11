@@ -51,21 +51,15 @@ class SnakeEnv:
         return self._build_grid(), 0.0, False, {}
 
     def render_ascii(self) -> str:
-        obs = self._build_grid()
-        # Recover a scalar label per cell from the one-hot channels.
-        labels = obs.argmax(axis=-1)  # shape (GRID_SIZE, GRID_SIZE)
         symbols = {EMPTY: ".", BODY: "o", HEAD: "H", FOOD: "*"}
+        labels = self._build_grid().argmax(axis=-1)
         rows = ["".join(symbols[int(cell)] for cell in row) for row in labels]
         return "\n".join(rows)
 
     def _build_grid(self) -> np.ndarray:
-        """Return a (GRID_SIZE, GRID_SIZE, 4) float32 one-hot tensor.
-
-        Channel order matches the constants: EMPTY=0, BODY=1, HEAD=2, FOOD=3.
-        Every cell has exactly one channel set to 1.0.
-        """
+        # (GRID_SIZE, GRID_SIZE, 4) one-hot float32; channel = EMPTY/BODY/HEAD/FOOD
         obs = np.zeros((GRID_SIZE, GRID_SIZE, 4), dtype=np.float32)
-        obs[:, :, EMPTY] = 1.0          # all cells start as empty
+        obs[:, :, EMPTY] = 1.0
         for cell in self._snake[1:]:
             obs[cell][EMPTY] = 0.0
             obs[cell][BODY] = 1.0

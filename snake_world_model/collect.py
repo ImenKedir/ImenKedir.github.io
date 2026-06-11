@@ -1,23 +1,17 @@
 """Collect a transition dataset for training a Snake world model.
 
-Produces three parallel tensors saved to transitions.pt:
+Saves three tensors to transitions.pt:
   obs:       (N, 4, H, W)  float32  – state before action
   actions:   (N, 4)         float32  – one-hot action
   next_obs:  (N, 4, H, W)  float32  – resulting state
 
-Terminal transitions (where the snake dies) are never stored, so every
-next_obs is a valid live game state.
-
-Diversity strategy: episodes cycle through four epsilon values so the dataset
-contains a mix of near-random, exploratory, and near-optimal play.
-
-Deduplication: each (obs, action) pair is hashed with MD5 before storing;
-duplicates are silently dropped.
+Terminal transitions are skipped so every next_obs is a valid live state.
+Episodes cycle through epsilons [1.0, 0.75, 0.4, 0.1, 0.0] for diversity.
+(obs, action) pairs are MD5-hashed to skip duplicates.
 
 Usage:
-    cd snake_world_model
-    python collect.py                  # 100 k transitions → transitions.pt
-    python collect.py --n 50000 --out my_data.pt
+    python collect.py          # 100k transitions
+    python collect.py --n 50000
 """
 
 import argparse
@@ -30,142 +24,89 @@ import torch
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).parent))
-from env import SnakeEnv, UP, DOWN, LEFT, RIGHT, GRID_SIZE
+from env import SnakeEnv, UP, DOWN, LEFT, RIGHT, GRID_SIZE, _OPPOSITE
 
-# ---------------------------------------------------------------------------
-# Policies
-# ---------------------------------------------------------------------------
-
-_OPPOSITE = {UP: DOWN, DOWN: UP, LEFT: RIGHT, RIGHT: LEFT}
-
-# Epsilons cycled across episodes: 1.0=fully random, 0.0=fully greedy.
-# This spreads the dataset across early deaths, mid-game, and long snakes.
-_EPSILONS = [1.0, 0.75, 0.4, 0.1, 0.0]
+EPSILONS = [1.0, 0.75, 0.4, 0.1, 0.0]
 
 
-def _greedy_action(snake: list, food: tuple, direction: int) -> int:
-    """One-step Manhattan-distance move toward food; never reverses."""
+def greedy_action(snake, food, direction):
     hr, hc = snake[0]
     fr, fc = food
-    dr, dc = fr - hr, fc - hc
-
-    # Rank candidates by how much they close the gap
-    candidates = sorted(
-        [UP, DOWN, LEFT, RIGHT],
-        key=lambda a: (
-            abs(dr - {UP: -1, DOWN: 1, LEFT: 0, RIGHT: 0}[a])
-            + abs(dc - {UP: 0, DOWN: 0, LEFT: -1, RIGHT: 1}[a])
-        ),
-    )
-    for action in candidates:
-        if action != _OPPOSITE[direction]:
-            return action
-    return direction  # fallback (shouldn't happen)
+    if abs(fr - hr) >= abs(fc - hc):
+        preferred = DOWN if fr > hr else UP
+        other = RIGHT if fc > hc else LEFT
+    else:
+        preferred = RIGHT if fc > hc else LEFT
+        other = DOWN if fr > hr else UP
+    if preferred != _OPPOSITE[direction]:
+        return preferred
+    return other
 
 
-def _choose_action(env: SnakeEnv, epsilon: float) -> int:
+def choose_action(env, epsilon):
     if random.random() < epsilon:
         return random.randint(0, 3)
-    return _greedy_action(env._snake, env._food, env._direction)
+    return greedy_action(env._snake, env._food, env._direction)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _to_tensor(obs) -> torch.Tensor:
-    """(H, W, 4) numpy float32  →  (4, H, W) torch float32."""
+def to_tensor(obs):
     return torch.from_numpy(obs).permute(2, 0, 1).contiguous()
 
 
-def _hash(obs_t: torch.Tensor, action: int) -> bytes:
-    """Stable 16-byte digest of an (obs, action) pair."""
+def obs_hash(obs_t, action):
     return hashlib.md5(obs_t.numpy().tobytes() + action.to_bytes(1, "little")).digest()
 
 
-# ---------------------------------------------------------------------------
-# Collection loop
-# ---------------------------------------------------------------------------
+def collect(n):
+    obs_buf      = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
+    act_buf      = torch.zeros(n, 4)
+    next_obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
 
-def collect(target: int, print_every: int = 10_000) -> dict:
-    env = SnakeEnv()
-    seen: set[bytes] = set()
+    env      = SnakeEnv()
+    seen     = set()
+    stored   = 0
+    episodes = 0
+    dupes    = 0
 
-    H, W = GRID_SIZE, GRID_SIZE
-    obs_buf      = torch.zeros(target, 4, H, W, dtype=torch.float32)
-    act_buf      = torch.zeros(target, 4,        dtype=torch.float32)
-    next_obs_buf = torch.zeros(target, 4, H, W, dtype=torch.float32)
+    while stored < n:
+        epsilon = EPSILONS[episodes % len(EPSILONS)]
+        obs_t   = to_tensor(env.reset(seed=random.randint(0, 2**31 - 1)))
+        done    = False
 
-    n          = 0  # transitions stored so far
-    episodes   = 0
-    dup_count  = 0
-    next_milestone = print_every
-
-    while n < target:
-        epsilon = _EPSILONS[episodes % len(_EPSILONS)]
-        raw_obs = env.reset(seed=random.randint(0, 2**31 - 1))
-        obs_t   = _to_tensor(raw_obs)
-
-        done = False
-        while not done and n < target:
-            action     = _choose_action(env, epsilon)
-            key        = _hash(obs_t, action)
+        while not done and stored < n:
+            action = choose_action(env, epsilon)
+            key    = obs_hash(obs_t, action)
 
             raw_next, _reward, done, _ = env.step(action)
-            next_obs_t = _to_tensor(raw_next)
+            next_obs_t = to_tensor(raw_next)
 
             if not done and key not in seen:
                 seen.add(key)
-                obs_buf[n]      = obs_t
-                act_buf[n]      = F.one_hot(torch.tensor(action), num_classes=4).float()
-                next_obs_buf[n] = next_obs_t
-                n += 1
-
-                if n >= next_milestone:
-                    print(f"  {n:>9,} / {target:,}  "
-                          f"(episodes: {episodes:,}  dupes skipped: {dup_count:,})")
-                    next_milestone += print_every
+                obs_buf[stored]      = obs_t
+                act_buf[stored]      = F.one_hot(torch.tensor(action), num_classes=4).float()
+                next_obs_buf[stored] = next_obs_t
+                stored += 1
+                if stored % 10_000 == 0:
+                    print(f"  {stored:>9,} / {n:,}  (episodes: {episodes:,}  dupes: {dupes:,})")
             else:
-                dup_count += 1
+                dupes += 1
 
             obs_t = next_obs_t
 
         episodes += 1
 
-    print(f"\nDone. {n:,} unique transitions from {episodes:,} episodes "
-          f"({dup_count:,} duplicates skipped).")
-
-    return {
-        "obs":      obs_buf,       # (N, 4, H, W)
-        "actions":  act_buf,       # (N, 4)
-        "next_obs": next_obs_buf,  # (N, 4, H, W)
-    }
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Collect Snake transition dataset")
-    parser.add_argument("--n",   type=int,  default=100_000, help="number of unique transitions")
-    parser.add_argument("--out", type=str,  default="transitions.pt", help="output path")
-    args = parser.parse_args()
-
-    out = Path(args.out)
-    if not out.is_absolute():
-        out = Path(__file__).parent / out
-
-    print(f"Collecting {args.n:,} unique transitions → {out}")
-    dataset = collect(args.n)
-
-    print("\nTensor shapes:")
-    for k, v in dataset.items():
-        print(f"  {k:10s}  {str(tuple(v.shape)):25s}  {v.dtype}")
-
-    torch.save(dataset, out)
-    print(f"\nSaved to {out}  ({out.stat().st_size / 1e6:.1f} MB)")
+    print(f"\n{stored:,} transitions from {episodes:,} episodes ({dupes:,} dupes skipped)")
+    return {"obs": obs_buf, "actions": act_buf, "next_obs": next_obs_buf}
 
 
 if __name__ == "__main__":
-    main()
+    p = argparse.ArgumentParser()
+    p.add_argument("--n", type=int, default=100_000)
+    args = p.parse_args()
+
+    out = Path(__file__).parent / "transitions.pt"
+    print(f"Collecting {args.n:,} transitions → {out}")
+
+    dataset = collect(args.n)
+    torch.save(dataset, out)
+    print(f"Saved ({out.stat().st_size / 1e6:.1f} MB)")
