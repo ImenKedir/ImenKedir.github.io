@@ -1,0 +1,29 @@
+{
+  "dtype": "float32",
+  "gridSize": 10,
+  "channels": 4,
+  "obsDim": 400,
+  "inputDim": 404,
+  "layers": [
+    {
+      "in": 404,
+      "out": 512
+    },
+    {
+      "in": 512,
+      "out": 512
+    },
+    {
+      "in": 512,
+      "out": 512
+    },
+    {
+      "in": 512,
+      "out": 512
+    },
+    {
+      "in": 512,
+      "out": 400
+    }
+  ]
+}
