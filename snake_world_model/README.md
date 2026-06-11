@@ -11,6 +11,8 @@ to predict the next game state from the current state and an action.
 - `model.py` — `SnakeWorldModel`, an MLP that predicts the next state.
 - `train.py` — train the model on the dataset (saves `world_model.pt`).
 - `play.py` — play Snake yourself in the terminal.
+- `world_model_env.py` — `WorldModelEnv`, a drop-in `SnakeEnv` that runs on the
+  trained model so you can play *inside* its predictions.
 
 ## The environment
 
@@ -46,9 +48,10 @@ render_ascii() -> str
 ## The pipeline
 
 ```bash
-python collect.py     # generate transitions.pt
-python train.py       # train the world model -> world_model.pt
-python play.py        # play Snake in the terminal (arrow keys, q to quit)
+python collect.py        # generate transitions.pt
+python train.py          # train the world model -> world_model.pt
+python play.py           # play Snake in the terminal (arrow keys, q to quit)
+python play.py --model   # play inside the model's predictions (the "dream")
 ```
 
 `collect.py` and `train.py` take optional flags (`--n`, `--epochs`, `--batch`,

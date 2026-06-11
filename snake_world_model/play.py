@@ -14,12 +14,11 @@ KEY_TO_ACTION = {
 TICK = 0.15  # seconds per step
 
 
-def main(stdscr):
+def main(stdscr, env):
     curses.curs_set(0)
     stdscr.nodelay(True)
     stdscr.timeout(int(TICK * 1000))
 
-    env   = SnakeEnv()
     env.reset()
     score = 0
 
@@ -54,4 +53,17 @@ def main(stdscr):
 
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    import argparse
+
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--model", action="store_true",
+                   help="dream inside the world model instead of the real game")
+    args = p.parse_args()
+
+    if args.model:
+        from world_model_env import WorldModelEnv
+        env = WorldModelEnv()
+    else:
+        env = SnakeEnv()
+
+    curses.wrapper(main, env)
