@@ -30,7 +30,7 @@ import torch
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).parent))
-from env import SnakeEnv, UP, DOWN, LEFT, RIGHT
+from env import SnakeEnv, UP, DOWN, LEFT, RIGHT, GRID_SIZE
 
 # ---------------------------------------------------------------------------
 # Policies
@@ -91,34 +91,36 @@ def collect(target: int, print_every: int = 10_000) -> dict:
     env = SnakeEnv()
     seen: set[bytes] = set()
 
-    obs_list:      list[torch.Tensor] = []
-    act_list:      list[torch.Tensor] = []
-    next_obs_list: list[torch.Tensor] = []
+    H, W = GRID_SIZE, GRID_SIZE
+    obs_buf      = torch.zeros(target, 4, H, W, dtype=torch.float32)
+    act_buf      = torch.zeros(target, 4,        dtype=torch.float32)
+    next_obs_buf = torch.zeros(target, 4, H, W, dtype=torch.float32)
 
-    episodes  = 0
-    dup_count = 0
+    n          = 0  # transitions stored so far
+    episodes   = 0
+    dup_count  = 0
     next_milestone = print_every
 
-    while len(obs_list) < target:
+    while n < target:
         epsilon = _EPSILONS[episodes % len(_EPSILONS)]
         raw_obs = env.reset(seed=random.randint(0, 2**31 - 1))
         obs_t   = _to_tensor(raw_obs)
 
         done = False
-        while not done and len(obs_list) < target:
-            action  = _choose_action(env, epsilon)
-            key     = _hash(obs_t, action)
+        while not done and n < target:
+            action     = _choose_action(env, epsilon)
+            key        = _hash(obs_t, action)
 
             raw_next, _reward, done, _ = env.step(action)
             next_obs_t = _to_tensor(raw_next)
 
             if not done and key not in seen:
                 seen.add(key)
-                obs_list.append(obs_t)
-                act_list.append(F.one_hot(torch.tensor(action), num_classes=4).float())
-                next_obs_list.append(next_obs_t)
+                obs_buf[n]      = obs_t
+                act_buf[n]      = F.one_hot(torch.tensor(action), num_classes=4).float()
+                next_obs_buf[n] = next_obs_t
+                n += 1
 
-                n = len(obs_list)
                 if n >= next_milestone:
                     print(f"  {n:>9,} / {target:,}  "
                           f"(episodes: {episodes:,}  dupes skipped: {dup_count:,})")
@@ -130,13 +132,13 @@ def collect(target: int, print_every: int = 10_000) -> dict:
 
         episodes += 1
 
-    print(f"\nDone. {len(obs_list):,} unique transitions from {episodes:,} episodes "
+    print(f"\nDone. {n:,} unique transitions from {episodes:,} episodes "
           f"({dup_count:,} duplicates skipped).")
 
     return {
-        "obs":      torch.stack(obs_list),       # (N, 4, H, W)
-        "actions":  torch.stack(act_list),        # (N, 4)
-        "next_obs": torch.stack(next_obs_list),   # (N, 4, H, W)
+        "obs":      obs_buf,       # (N, 4, H, W)
+        "actions":  act_buf,       # (N, 4)
+        "next_obs": next_obs_buf,  # (N, 4, H, W)
     }
 
 
