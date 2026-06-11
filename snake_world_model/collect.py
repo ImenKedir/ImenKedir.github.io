@@ -1,10 +1,12 @@
 """Collect a transition dataset for training a Snake world model.
 
-Produces four parallel tensors saved to transitions.pt:
+Produces three parallel tensors saved to transitions.pt:
   obs:       (N, 4, H, W)  float32  – state before action
   actions:   (N, 4)         float32  – one-hot action
   next_obs:  (N, 4, H, W)  float32  – resulting state
-  done:      (N,)           bool     – True when next_obs is a terminal state
+
+Terminal transitions (where the snake dies) are never stored, so every
+next_obs is a valid live game state.
 
 Diversity strategy: episodes cycle through four epsilon values so the dataset
 contains a mix of near-random, exploratory, and near-optimal play.
@@ -92,7 +94,6 @@ def collect(target: int, print_every: int = 10_000) -> dict:
     obs_list:      list[torch.Tensor] = []
     act_list:      list[torch.Tensor] = []
     next_obs_list: list[torch.Tensor] = []
-    done_list:     list[bool]         = []
 
     episodes  = 0
     dup_count = 0
@@ -111,12 +112,11 @@ def collect(target: int, print_every: int = 10_000) -> dict:
             raw_next, _reward, done, _ = env.step(action)
             next_obs_t = _to_tensor(raw_next)
 
-            if key not in seen:
+            if not done and key not in seen:
                 seen.add(key)
                 obs_list.append(obs_t)
                 act_list.append(F.one_hot(torch.tensor(action), num_classes=4).float())
                 next_obs_list.append(next_obs_t)
-                done_list.append(done)
 
                 n = len(obs_list)
                 if n >= next_milestone:
@@ -137,7 +137,6 @@ def collect(target: int, print_every: int = 10_000) -> dict:
         "obs":      torch.stack(obs_list),       # (N, 4, H, W)
         "actions":  torch.stack(act_list),        # (N, 4)
         "next_obs": torch.stack(next_obs_list),   # (N, 4, H, W)
-        "done":     torch.tensor(done_list),      # (N,)
     }
 
 
