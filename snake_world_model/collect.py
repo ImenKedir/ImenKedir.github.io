@@ -7,7 +7,7 @@ Saves three tensors to transitions.pt:
 
 Terminal transitions are skipped so every next_obs is a valid live state.
 Episodes cycle through epsilons [1.0, 0.75, 0.4, 0.1, 0.0] for diversity.
-(obs, action) pairs are MD5-hashed to skip duplicates.
+Duplicate (obs, action) pairs are hashed and skipped.
 
 Usage:
     python collect.py          # 100k transitions
@@ -17,13 +17,11 @@ Usage:
 import argparse
 import hashlib
 import random
-import sys
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, str(Path(__file__).parent))
 from env import SnakeEnv, UP, DOWN, LEFT, RIGHT, GRID_SIZE, _OPPOSITE
 
 EPSILONS = [1.0, 0.75, 0.4, 0.1, 0.0]
@@ -43,47 +41,42 @@ def greedy_action(snake, food, direction):
     return other
 
 
-def choose_action(env, epsilon):
-    if random.random() < epsilon:
-        return random.randint(0, 3)
-    return greedy_action(env._snake, env._food, env._direction)
-
-
 def to_tensor(obs):
     return torch.from_numpy(obs).permute(2, 0, 1).contiguous()
 
 
-def obs_hash(obs_t, action):
-    return hashlib.md5(obs_t.numpy().tobytes() + action.to_bytes(1, "little")).digest()
-
-
 def collect(n):
-    obs_buf      = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
-    act_buf      = torch.zeros(n, 4)
+    obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
+    act_buf = torch.zeros(n, 4)
     next_obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
 
-    env      = SnakeEnv()
-    seen     = set()
-    stored   = 0
+    env = SnakeEnv()
+    seen = set()
+    stored = 0
     episodes = 0
-    dupes    = 0
+    dupes = 0
 
     while stored < n:
         epsilon = EPSILONS[episodes % len(EPSILONS)]
-        obs_t   = to_tensor(env.reset(seed=random.randint(0, 2**31 - 1)))
-        done    = False
+        obs_t = to_tensor(env.reset(seed=random.randint(0, 2**31 - 1)))
+        done = False
 
         while not done and stored < n:
-            action = choose_action(env, epsilon)
-            key    = obs_hash(obs_t, action)
+            if random.random() < epsilon:
+                action = random.randint(0, 3)
+            else:
+                action = greedy_action(env._snake, env._food, env._direction)
+
+            # Hash (obs, action) to 16 bytes so the dedup set stays small.
+            key = hashlib.md5(obs_t.numpy().tobytes() + action.to_bytes(1, "little")).digest()
 
             raw_next, _reward, done, _ = env.step(action)
             next_obs_t = to_tensor(raw_next)
 
             if not done and key not in seen:
                 seen.add(key)
-                obs_buf[stored]      = obs_t
-                act_buf[stored]      = F.one_hot(torch.tensor(action), num_classes=4).float()
+                obs_buf[stored] = obs_t
+                act_buf[stored] = F.one_hot(torch.tensor(action), num_classes=4).float()
                 next_obs_buf[stored] = next_obs_t
                 stored += 1
                 if stored % 10_000 == 0:

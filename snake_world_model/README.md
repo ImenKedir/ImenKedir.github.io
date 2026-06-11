@@ -1,97 +1,72 @@
-# Snake World Model — Milestone 1: The Simulator
+# Snake World Model
 
-This is the first milestone of the **Build Your First World Model** project. The
-goal of the larger project is to learn a neural network that can *predict* the
-next state of an environment (a "world model"). Before any machine learning, we
-need a clean, deterministic environment to generate data from.
-
-This milestone is **only the simulator and its tests** — a minimal, CPU-only,
-graphics-free 10x10 Snake game. No PyTorch, no rendering libraries, no training
-code yet.
+A tiny, CPU-only project that **learns to predict the future**: first we build a
+deterministic Snake simulator, then we train a neural network (a "world model")
+to predict the next game state from the current state and an action.
 
 ## What's here
 
-- `env.py` — `SnakeEnv`, a deterministic Snake environment with a small,
-  Gym-like API.
-- `test_env.py` — tests covering reset, grid invariants, stepping, wall
-  collisions, and seeded determinism.
-- `README.md` — this file.
+- `env.py` — `SnakeEnv`, a deterministic 10x10 Snake simulator.
+- `collect.py` — roll out episodes and save a transition dataset (`transitions.pt`).
+- `model.py` — `SnakeWorldModel`, an MLP that predicts the next state.
+- `train.py` — train the model on the dataset (saves `world_model.pt`).
+- `play.py` — play Snake yourself in the terminal.
 
 ## The environment
 
-State is a `10x10` NumPy array of integers:
+The observation is a `(10, 10, 4)` one-hot `float32` grid — each cell has four
+channels, exactly one of which is hot:
 
-| Value | Meaning      |
-| ----- | ------------ |
-| `0`   | empty        |
-| `1`   | snake body   |
-| `2`   | snake head   |
-| `3`   | food         |
+| Channel | Meaning    |
+| ------- | ---------- |
+| `0`     | empty      |
+| `1`     | snake body |
+| `2`     | snake head |
+| `3`     | food       |
 
-Actions:
-
-| Value | Meaning |
-| ----- | ------- |
-| `0`   | up      |
-| `1`   | down    |
-| `2`   | left    |
-| `3`   | right   |
+Actions: `0` up, `1` down, `2` left, `3` right.
 
 Rules:
 
 - The snake starts at length 3, centered and facing right.
 - Food is placed on a random empty cell.
-- Moving into a wall or into the snake's own body ends the episode.
-- Eating food grows the snake and gives reward `+1`.
-- A normal move gives reward `0`.
-- Death gives reward `-1`.
-- Reverse-direction actions (180° turns) are ignored — the snake keeps moving in
-  its current direction.
+- Moving into a wall or the snake's own body ends the episode (reward `-1`).
+- Eating food grows the snake (reward `+1`); a normal move gives `0`.
+- Reverse-direction actions are ignored — the snake keeps its current direction.
 - Given a seed, the environment is fully deterministic.
 
-## API
+API:
 
 ```python
-reset(seed: int | None = None) -> np.ndarray
+reset(seed: int | None = None) -> np.ndarray            # (10, 10, 4) one-hot
 step(action: int) -> tuple[np.ndarray, float, bool, dict]
 render_ascii() -> str
 ```
 
-## How to run the tests
-
-From inside the `snake_world_model/` directory:
+## The pipeline
 
 ```bash
-cd snake_world_model
-pytest
+python collect.py     # generate transitions.pt
+python train.py       # train the world model -> world_model.pt
+python play.py        # play Snake in the terminal (arrow keys, q to quit)
 ```
 
-Or from the project root:
+`collect.py` and `train.py` take optional flags (`--n`, `--epochs`, `--batch`,
+`--lr`); run either with `-h` to see them.
 
-```bash
-pytest snake_world_model/test_env.py
-```
-
-## Tiny usage example
+## Usage example
 
 ```python
 from env import SnakeEnv
 
 env = SnakeEnv()
-grid = env.reset(seed=0)
+obs = env.reset(seed=0)               # (10, 10, 4) one-hot float32
 print(env.render_ascii())
 
-done = False
-total_reward = 0.0
-while not done:
-    action = 3  # always move right (a very short-lived snake)
-    grid, reward, done, info = env.step(action)
-    total_reward += reward
-
-print("episode finished, total reward:", total_reward)
+obs, reward, done, _ = env.step(3)    # move right
 ```
 
-Example `render_ascii()` output (head `H`, body `o`, food `*`, empty `.`):
+`render_ascii()` shows the grid with `H` head, `o` body, `*` food, `.` empty:
 
 ```
 ..........

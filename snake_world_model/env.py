@@ -1,6 +1,6 @@
 """Minimal deterministic 10x10 Snake environment for the world-model project.
 
-No graphics, no ML — just the simulator and a small Gym-like API.
+Observations are (H, W, 4) one-hot float32 grids; the API is Gym-like.
 """
 
 import numpy as np
@@ -25,7 +25,7 @@ class SnakeEnv:
         self._snake = [(mid, mid), (mid, mid - 1), (mid, mid - 2)]
         self._direction = RIGHT
         self._place_food()
-        return self._build_grid()
+        return self._observe()
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, dict]:
         # Reverse turns are ignored; the snake keeps its current direction.
@@ -40,34 +40,32 @@ class SnakeEnv:
         r, c = new_head
         in_bounds = 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE
         if not in_bounds or new_head in set(self._snake[:-1]):
-            return self._build_grid(), -1.0, True, {}
+            return self._observe(), -1.0, True, {}
 
         self._snake.insert(0, new_head)
         if new_head == self._food:
             self._place_food()
-            return self._build_grid(), 1.0, False, {}
+            return self._observe(), 1.0, False, {}
 
         self._snake.pop()
-        return self._build_grid(), 0.0, False, {}
+        return self._observe(), 0.0, False, {}
 
     def render_ascii(self) -> str:
         symbols = {EMPTY: ".", BODY: "o", HEAD: "H", FOOD: "*"}
-        labels = self._build_grid().argmax(axis=-1)
-        rows = ["".join(symbols[int(cell)] for cell in row) for row in labels]
+        rows = ["".join(symbols[int(cell)] for cell in row) for row in self._labels()]
         return "\n".join(rows)
 
-    def _build_grid(self) -> np.ndarray:
-        # (GRID_SIZE, GRID_SIZE, 4) one-hot float32; channel = EMPTY/BODY/HEAD/FOOD
-        obs = np.zeros((GRID_SIZE, GRID_SIZE, 4), dtype=np.float32)
-        obs[:, :, EMPTY] = 1.0
+    def _observe(self) -> np.ndarray:
+        # (H, W, 4) one-hot float32 — the model's view of the world.
+        return np.eye(4, dtype=np.float32)[self._labels()]
+
+    def _labels(self) -> np.ndarray:
+        grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
         for cell in self._snake[1:]:
-            obs[cell][EMPTY] = 0.0
-            obs[cell][BODY] = 1.0
-        obs[self._food][EMPTY] = 0.0
-        obs[self._food][FOOD] = 1.0
-        obs[self._snake[0]][EMPTY] = 0.0
-        obs[self._snake[0]][HEAD] = 1.0
-        return obs
+            grid[cell] = BODY
+        grid[self._food] = FOOD
+        grid[self._snake[0]] = HEAD
+        return grid
 
     def _place_food(self) -> None:
         occupied = set(self._snake)

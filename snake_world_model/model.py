@@ -12,17 +12,19 @@ from env import GRID_SIZE
 
 OBS_DIM   = 4 * GRID_SIZE * GRID_SIZE  # 400
 INPUT_DIM = OBS_DIM + 4                # 404
+HIDDEN    = 512
+DEPTH     = 4
 
 
 class SnakeWorldModel(nn.Module):
-    def __init__(self, hidden=512, depth=4):
+    def __init__(self):
         super().__init__()
         layers = []
         in_dim = INPUT_DIM
-        for _ in range(depth):
-            layers += [nn.Linear(in_dim, hidden), nn.ReLU()]
-            in_dim = hidden
-        layers.append(nn.Linear(hidden, OBS_DIM))
+        for _ in range(DEPTH):
+            layers += [nn.Linear(in_dim, HIDDEN), nn.ReLU()]
+            in_dim = HIDDEN
+        layers.append(nn.Linear(HIDDEN, OBS_DIM))
         self.net = nn.Sequential(*layers)
 
     def forward(self, obs, action):
