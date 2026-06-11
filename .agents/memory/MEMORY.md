@@ -1,3 +1,1 @@
-# Memory Index
-
-- [Snake World Model demo](snake-world-model.md) — in-browser MLP world-model demo; retrain→export→`verify`; model never grows the snake & rarely "collapses", so headline fidelity %, not score.
+- [Snake world-model scaling](snake-world-model.md) — ~95% empty grid makes naive accuracy useless; use held-out loss + active-cell acc; runner is sandboxed to experiments/; clear _cache.json when config changes.

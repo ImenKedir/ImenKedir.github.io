@@ -93,62 +93,62 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* DARK MODE DEFAULT */
+/* MONOCHROME LIGHT DEFAULT */
 :root {
-  color-scheme: dark;
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  color-scheme: light;
+  --button-outline: rgba(0,0,0, .12);
+  --badge-outline: rgba(0,0,0, .08);
 
-  --opaque-button-border-intensity: 9;
+  --opaque-button-border-intensity: -9;
 
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(0,0,0, .04);
+  --elevate-2: rgba(0,0,0, .09);
 
-  --background: 240 10% 4%;
-  --foreground: 0 0% 98%;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
 
-  --border: 240 5% 15%;
+  --border: 0 0% 85%;
   
-  --card: 240 5% 7%;
-  --card-foreground: 0 0% 98%;
-  --card-border: 240 5% 15%;
+  --card: 0 0% 97%;
+  --card-foreground: 0 0% 9%;
+  --card-border: 0 0% 88%;
 
-  --sidebar: 240 5% 7%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 240 5% 15%;
-  --sidebar-primary: 260 100% 65%;
+  --sidebar: 0 0% 97%;
+  --sidebar-foreground: 0 0% 9%;
+  --sidebar-border: 0 0% 88%;
+  --sidebar-primary: 0 0% 9%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 240 5% 15%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 260 100% 65%;
+  --sidebar-accent: 0 0% 90%;
+  --sidebar-accent-foreground: 0 0% 9%;
+  --sidebar-ring: 0 0% 9%;
 
-  --popover: 240 5% 7%;
-  --popover-foreground: 0 0% 98%;
-  --popover-border: 240 5% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --popover-border: 0 0% 88%;
 
-  --primary: 260 100% 65%;
+  --primary: 0 0% 9%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 240 5% 15%;
-  --secondary-foreground: 0 0% 98%;
+  --secondary: 0 0% 92%;
+  --secondary-foreground: 0 0% 9%;
 
-  --muted: 240 5% 12%;
-  --muted-foreground: 240 5% 60%;
+  --muted: 0 0% 94%;
+  --muted-foreground: 0 0% 40%;
 
-  --accent: 320 100% 60%;
-  --accent-foreground: 0 0% 100%;
+  --accent: 0 0% 90%;
+  --accent-foreground: 0 0% 9%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 0 0% 9%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 240 5% 15%;
-  --ring: 260 100% 65%;
+  --input: 0 0% 85%;
+  --ring: 0 0% 9%;
 
-  --chart-1: 260 100% 65%;
-  --chart-2: 320 100% 60%;
-  --chart-3: 160 100% 45%;
-  --chart-4: 40 100% 60%;
-  --chart-5: 200 100% 50%;
+  --chart-1: 0 0% 13%;
+  --chart-2: 0 0% 32%;
+  --chart-3: 0 0% 50%;
+  --chart-4: 0 0% 68%;
+  --chart-5: 0 0% 82%;
 
   --app-font-sans: 'Syne', sans-serif;
   --app-font-serif: Georgia, serif;

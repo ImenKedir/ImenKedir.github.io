@@ -5,21 +5,21 @@ import { Play, Pause, RotateCcw, Activity, BrainCircuit } from "lucide-react";
 import { useSwipe } from "@/hooks/use-swipe";
 
 const CELL_COLORS: Record<number, string> = {
-  [EMPTY]: "rgba(0,0,0,0.2)",
-  [BODY]: "#00ff88",
-  [HEAD]: "#ffff00",
-  [FOOD]: "#ff00ff",
+  [EMPTY]: "#e6e6e6",
+  [BODY]: "#9ca3af",
+  [HEAD]: "#111111",
+  [FOOD]: "#6b7280",
 };
 
 function Cell({ label, isCompare, realLabel }: { label: number, isCompare: boolean, realLabel: number }) {
   const isMatch = label === realLabel;
-  const borderClass = isCompare && !isMatch ? "border-destructive" : "border-transparent";
+  const borderClass = isCompare && !isMatch ? "border-foreground" : "border-transparent";
 
   return (
     <motion.div 
       initial={false}
       animate={{ backgroundColor: CELL_COLORS[label] ?? CELL_COLORS[EMPTY] }}
-      className={`w-full h-full rounded-sm border ${borderClass}`}
+      className={`w-full h-full rounded-sm border-2 ${borderClass}`}
     />
   );
 }

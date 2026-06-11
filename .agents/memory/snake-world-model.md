@@ -1,30 +1,51 @@
 ---
-name: Snake World Model demo
-description: Architecture and empirical quirks of the in-browser Snake world-model demo (artifacts/snake-world-model)
+name: Snake world-model scaling experiment
+description: Non-obvious metric/sandboxing/optimization lessons for the tiny Snake next-frame predictor and its scaling study under snake_world_model/experiments/
 ---
 
-# Snake World Model demo
+# Snake world-model — durable lessons
 
-In-browser "try the trained world model" demo. The Python project `snake_world_model/`
-trains a tiny MLP (404->512x4->400) that predicts the next Snake frame given the current
-frame + action. The demo runs inference fully client-side — no Python server.
+## Metrics: naive accuracy is a trap here
+A 10x10 Snake frame is ~95% empty cells. Per-cell accuracy and whole-frame
+exact-match are therefore dominated by the trivial "predict empty everywhere"
+solution (≈94% cell acc, exact≈0 for a model that learned nothing). They sit at
+that floor across an entire data/params/compute sweep and do NOT separate runs.
+**Use held-out cross-entropy loss (primary, graded everywhere) + active-cell
+accuracy (accuracy restricted to non-empty target cells).**
+**Why:** loss is the only metric that moves continuously across the sweep;
+active-cell acc is a phase-transition metric — it stays 0 until both data AND
+training compute are raised, then jumps (in the study it only lit up at 2000
+examples × 100 epochs ≈ 35%).
+**How to apply:** when judging "did scaling help?", read loss; treat any
+near-floor exact-match/head-accuracy as expected, not as a bug. Base any
+"which knob won" headline on loss drops, not on active-acc deltas (those are
+mostly 0 and tie degenerately).
 
-## Architecture / regeneration workflow
-- Weights are exported from PyTorch by `snake_world_model/export_weights.py` into
-  `artifacts/snake-world-model/public/world_model.bin` (float32 LE) + `world_model.json` (manifest).
-- The forward pass is re-implemented in TypeScript under `artifacts/snake-world-model/src/engine/`.
-- After ANY retrain/re-export, run `pnpm --filter @workspace/snake-world-model verify` — it checks
-  the TS forward pass against PyTorch using 40 exported fixtures. Treat this as the source of truth
-  for port correctness; do not trust the TS port after a weight change until verify passes.
+## Under-optimization gotcha (recipe-faithful, not a bug)
+The deployed recipe uses batch 512, which is ≥ the dataset size for the small
+cells, so training runs only a few hundred optimizer steps. Result: the model
+learns coarse "where the body roughly is" structure but never precise one-cell
+head/food localization, regardless of scale. Multi-step "dreaming" diverges
+almost immediately. Scaling data/compute 10× of any single knob does not fix
+this — closing the gap needs far more optimizer steps and/or a spatially-aware
+architecture. Don't inflate the compute budget to make numbers look good; the
+honest finding is that the regime is data-limited and under-optimized.
 
-## Empirical quirks of the trained model (NOT derivable from code — measured)
-**Why this matters:** these shape any honest UI framing of the demo.
-- The model does NOT model eating/growth: even when the real snake eats, the dreamed snake stays
-  constant length. So a "dream score" stays ~0 forever — never headline it as a score. The honest
-  headline is cell-agreement / "fidelity" vs the real frame (~90%+ for the first dozen+ steps).
-- The "collapse" signal (dream frame has != 1 head) rarely fires; degraded frames usually keep
-  exactly one head while sprouting extra food / body fragments. So rounds typically end on the REAL
-  snake crashing (autoplay greedy traps itself in ~10-40 steps), not on a detected dream collapse.
+## Sandboxing rule for the experiment runner
+`snake_world_model/experiments/run_experiments.py` must stay non-destructive:
+it defines its own model, imports only `env.py`/`collect.py`, and writes ONLY
+under `experiments/` (results JSONs, PNGs, EXPERIMENT_LOG.md, data/, _cache.json).
+Never let it modify `model.py`, the deployed baseline `transitions.pt`, or
+`public/world_model.*` — those drive the live web app.
 
-**How to apply:** if asked to improve the demo, lean on Compare mode + fidelity %, and present the
-no-growth behavior as an honest finding, not a bug. Don't add a dream-score leaderboard.
+## Cache caveat
+Per-cell results are cached in `experiments/_cache.json` keyed by cell label
+only — the key does NOT encode hyperparameters (epochs, widths, eval size).
+**If you change the grid config, delete `_cache.json` first**, or it will
+silently serve stale results from the previous configuration.
+
+## FLOPs framing
+Training FLOPs ≈ 6 · params · examples · epochs. At fixed params/data, 10×
+epochs = 10× FLOPs, which is why the 3×3's epochs axis is framed as a
+training-compute axis. Grid 2 is iso-FLOP-fair across both axes (10× data at
+fixed epochs is also 10× FLOPs).
