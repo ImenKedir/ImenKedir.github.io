@@ -26,10 +26,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
+      # Served at the domain root (www.imen.dev), so no BASE_PATH subpath.
       - run: npm run build
         working-directory: web
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/build
