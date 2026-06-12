@@ -3,16 +3,23 @@
 </script>
 
 <svelte:head>
-	<title>we have world models at home</title>
-	<meta name="description" content="Notes from building world models, starting stupidly small." />
+	<title>Imen Kedir</title>
+	<meta
+		name="description"
+		content="Imen Kedir's personal site. Notes from tinkering with neural networks."
+	/>
 </svelte:head>
 
-<p class="meta">"mom, can we get a world model?"</p>
-<h1>We have world models at home</h1>
+<h1>Imen Kedir</h1>
 <p class="lede">
-	Notes from building world models, starting stupidly small and scaling up until something
-	interesting breaks.
+	I'm Imen. Stanford CS '25. I think neural networks are the coolest thing humanity has, and this
+	is where I document my tinkering with them.
 </p>
+<ul class="links">
+	<li><a href="https://x.com/ImenKedir">twitter</a></li>
+	<li><a href="https://www.linkedin.com/in/imenkedir">linkedin</a></li>
+	<li><a href="https://github.com/ImenKedir/world-model">github</a></li>
+</ul>
 
 <h2>Posts</h2>
 <ul class="posts">
@@ -25,6 +32,29 @@
 <style>
 	.lede {
 		color: #444;
+	}
+	.links {
+		list-style: none;
+		display: flex;
+		gap: 1.4rem;
+		padding: 0;
+		margin: 1.5rem 0 0;
+	}
+	.links li {
+		margin: 0;
+	}
+	.links a {
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		color: var(--faint);
+		text-decoration: none;
+	}
+	.links a:hover {
+		color: var(--ink);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	.posts {
 		list-style: none;
