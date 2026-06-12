@@ -12,7 +12,7 @@
 <main>
 	{@render children()}
 	<footer>
-		<a href="https://github.com/OWNER/world-model">code on github</a>
+		<a href="https://github.com/ImenKedir/world-model">code on github</a>
 	</footer>
 </main>
 
