@@ -18,7 +18,6 @@
 <ul class="links">
 	<li><a href="https://x.com/ImenKedir">twitter</a></li>
 	<li><a href="https://www.linkedin.com/in/imenkedir">linkedin</a></li>
-	<li><a href="https://github.com/ImenKedir/world-model">github</a></li>
 </ul>
 
 <h2>Posts</h2>
