@@ -1,0 +1,81 @@
+{
+  "checkpoint": "world_model_2m_1x.pt",
+  "total_bytes": 4802112,
+  "tensors": [
+    {
+      "name": "net.0.weight",
+      "shape": [
+        512,
+        404
+      ],
+      "offset": 0
+    },
+    {
+      "name": "net.0.bias",
+      "shape": [
+        512
+      ],
+      "offset": 827392
+    },
+    {
+      "name": "net.2.weight",
+      "shape": [
+        512,
+        512
+      ],
+      "offset": 829440
+    },
+    {
+      "name": "net.2.bias",
+      "shape": [
+        512
+      ],
+      "offset": 1878016
+    },
+    {
+      "name": "net.4.weight",
+      "shape": [
+        512,
+        512
+      ],
+      "offset": 1880064
+    },
+    {
+      "name": "net.4.bias",
+      "shape": [
+        512
+      ],
+      "offset": 2928640
+    },
+    {
+      "name": "net.6.weight",
+      "shape": [
+        512,
+        512
+      ],
+      "offset": 2930688
+    },
+    {
+      "name": "net.6.bias",
+      "shape": [
+        512
+      ],
+      "offset": 3979264
+    },
+    {
+      "name": "net.8.weight",
+      "shape": [
+        400,
+        512
+      ],
+      "offset": 3981312
+    },
+    {
+      "name": "net.8.bias",
+      "shape": [
+        400
+      ],
+      "offset": 4800512
+    }
+  ]
+}

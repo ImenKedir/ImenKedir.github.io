@@ -1,1 +1,0 @@
-- [Snake world-model scaling](snake-world-model.md) — ~95% empty grid makes naive accuracy useless; use held-out loss + active-cell acc; runner is sandboxed to experiments/; clear _cache.json when config changes.

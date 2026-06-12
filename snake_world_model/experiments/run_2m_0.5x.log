@@ -1,0 +1,14 @@
+2M x 0.5x-params run  device=mps
+  data=2,000,000  hidden=333 (602,131 params)  epochs=100  batch=2048  lr=0.002
+  dropped 3083 eval-colliding transitions; 2,096,917 clean
+
+trained in 6.6 min
+  held-out loss     = 0.0119
+  active-cell acc   = 97.2%
+  head acc          = 94.5%
+  food acc          = 41.8%
+  exact-frame match = 83.4%
+  dream head-track  = 91.2%
+  steps to diverge  = 18.8
+
+wrote results_2m_0.5x.json + world_model_2m_0.5x.pt

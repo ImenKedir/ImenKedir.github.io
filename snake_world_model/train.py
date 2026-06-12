@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
+from device import best_device
 from model import SnakeWorldModel
 
 if __name__ == "__main__":
@@ -22,11 +23,11 @@ if __name__ == "__main__":
     args = p.parse_args()
 
     root   = Path(__file__).parent
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = best_device()
 
     data    = torch.load(root / "transitions.pt", weights_only=True)
-    obs     = data["obs"]
-    actions = data["actions"]
+    obs     = data["obs"].float()
+    actions = data["actions"].float()
     targets = data["next_obs"].argmax(dim=1).long()  # (N, H, W)
 
     n_val   = len(obs) // 10

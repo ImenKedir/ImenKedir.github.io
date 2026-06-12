@@ -1,0 +1,123 @@
+<script>
+	import Demo from '$lib/snake/Demo.svelte';
+	import TensorFig from '$lib/snake/TensorFig.svelte';
+	import ArchFig from '$lib/snake/ArchFig.svelte';
+	import { base } from '$app/paths';
+</script>
+
+<svelte:head>
+	<title>Trying to train a tiny world model</title>
+	<meta
+		name="description"
+		content="A 4-layer MLP learns Snake almost perfectly. The one thing it can't predict is the point."
+	/>
+</svelte:head>
+
+<p class="meta">2026-06-11</p>
+
+# Trying to train a tiny world model
+
+I wanted to find out what the simplest world model that I could train was. I am a member of the permanent underclass, so all the compute I have to offer is the M4 MacBook I have with its 48GB of unified memory.
+
+I think a simple world would be Snake. It's mostly deterministic and it's easy to represent as a tensor.
+
+## The world is a 10×10×4 tensor
+
+I think the simplest representation is the grid itself. Snake lives on a 10×10 grid, and every cell is exactly one of four things: `empty / body / head / food`. A frame is just a 10×10 grid of 4-way labels. One-hot those labels and you get a 10×10×4 tensor. That's the whole world. 400 numbers, all of them 0 or 1.
+
+<TensorFig />
+
+Given a state and an action there is exactly one correct next state. The one exception is the food: when the snake eats, the next food spawns on a random empty cell. Remember that. It's kinda the point of this whole blog post, outside of how easy it is to get started with world models.
+
+## Dumb architecture
+
+I wanted the simplest thing that could possibly work, so: an MLP. Flatten the frame (400 numbers), tack on a one-hot action (4 more), push it through four hidden layers, and read out 400 logits, a little 4-way classification for every cell of the next frame. Train with cross-entropy. 1,200,528 parameters. My brain is smooth so I wanna be able to understand what is happening if it breaks.
+
+<ArchFig />
+
+The whole thing fits in a screenshot:
+
+```python
+class SnakeWorldModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        layers, in_dim = [], 404            # 400 board + 4 action
+        for _ in range(4):
+            layers += [nn.Linear(in_dim, 512), nn.ReLU()]
+            in_dim = 512
+        layers.append(nn.Linear(512, 400))  # 4 logits per cell
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, obs, action):
+        x = torch.cat([obs.flatten(1), action], dim=1)
+        return self.net(x).view(-1, 4, 10, 10)
+```
+
+## Training data is cheap
+
+A training example is a transition: `(frame, action) → next frame`. We can generate them by writing a snake simulator and running a greedy algorithm over it. To be sure we're learning a wider distribution, not just the greedy policy, we sprinkle in some randomly selected moves here and there. And then we also do some deduplication because that's relatively easy: hash every `(frame, action)` pair and throw out duplicates. 2M *unique* transitions in the final dataset.
+
+## How do we measure the quality of this world model?
+
+I think the most straightforward thing is the per-cell accuracy. We have a hundred cells here, so basically getting any cell right contributes 1% to this accuracy. The problem is that early on in the trajectory the board is like 95% just empty, so a policy or a model that just predicts nothing everywhere is already scoring in the upper 90s. This metric is kind of useless. So Fable suggested these four other metrics, which I agree are better:
+
+- **active-cell accuracy**: only grade the cells that should have something in them (snake + food). The all-empty model gets exactly 0%.
+- **head accuracy**: is the head in the right cell?
+- **exact-frame match**: all 100 cells right.
+- **dream rollouts**: feed the model its own predictions for 30 steps and measure how long the dreamed head stays on the real head.
+
+## Try to get this model to learn something
+
+So the first thing was trying to figure out how to get this thing to learn something coherent. Before we get too fancy, we could just try scaling three axes:
+
+- how much data we have
+- how much compute we used to train
+- how many parameters our model is going to be
+
+**Data × compute.** The loss surface slopes pretty smoothly towards wanting more data. Compute seems to have minimal impact until we reach a certain data threshold, and then loss kind of steeply falls off. Another thing that's quite interesting is looking at the active cell accuracy, which really picks up around a data set of 2,000 transitions.
+
+<img src="{base}/plots/scaling_surface.png" alt="3D wireframe surfaces: loss and active-cell accuracy over data and epochs" />
+
+**More data.** Loss keeps falling as you add transitions: head accuracy, dream rollouts, all of it.
+
+<img src="{base}/plots/scaling_data.png" alt="held-out loss (log-log) and accuracy metrics vs training data size" />
+
+**Parameters.** Didn't really get much out of scaling the model. I think it just makes it more susceptible to overfitting, and the larger model actually did worse on the held-out set.
+
+<img src="{base}/plots/scaling_params.png" alt="accuracy metrics vs parameter count at 16k transitions" class="half" />
+
+The final recipe: 2M transitions, 1.2M parameters, 100 epochs at batch 2048, about six minutes on a laptop GPU.
+
+| | |
+|---|---|
+| held-out loss | 0.0069 |
+| active-cell accuracy | 98.0% |
+| head accuracy | 99.0% |
+| exact-frame match | 87.0% |
+| 30-step dream, head on track | 96.2% |
+| mean steps before divergence | 23.3 |
+
+## Play in the dream
+
+Both grids start from the same opening. The left is the real simulator. The right is the model predicting the next state: after step 0 it only ever sees its own predictions.
+
+<Demo />
+
+## The one thing it can't predict
+
+You might have noticed that after the snake eats the food, the model never predicts where the next food is going to spawn. It actually just predicts that none of the cells will have the food.
+
+This isn't really a learning failure. The model spreads food probability evenly across the remaining empty cells, which is basically the right answer. The problem is how we decode: I just take the highest-probability label for each cell, and empty wins everywhere. So the food vanishes even though the model learned the right distribution.
+
+I think this is a fundamental limitation with how we've architected the model and the system. We could try introduce a random latent variable, or reformulate this as an autoregressive language modeling problem where we sample cells on the board one at a time in a causal way. I'll leave this blog post here. We can figure that out in a follow-up.
+
+<style>
+	img {
+		display: block;
+		width: 100%;
+		margin: 1.75rem 0;
+	}
+	img.half {
+		max-width: 22rem;
+	}
+</style>

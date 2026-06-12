@@ -11,7 +11,7 @@ literally "10x the FLOPs used to train". Across both grids all three knobs
 
 Quality is measured on a single FIXED, held-out, de-duplicated eval set that is
 disjoint from every training set, plus a multi-step "dream" rollout fidelity
-metric (the same notion of quality the web app reports).
+metric (multi-step dream rollout fidelity).
 
 Everything is cached under experiments/data so reruns are cheap. Outputs:
   experiments/results_2x2.json, results_3x3.json
@@ -36,10 +36,13 @@ DATADIR = EXPDIR / "data"
 DATADIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(ROOT))
 
+from device import best_device  # noqa: E402
 from env import SnakeEnv, GRID_SIZE, EMPTY, HEAD, FOOD  # noqa: E402
 from collect import collect, greedy_action, to_tensor  # noqa: E402
 
-torch.set_num_threads(4)
+DEVICE = best_device()
+if DEVICE.type == "cpu":
+    torch.set_num_threads(4)
 
 OBS_DIM = 4 * GRID_SIZE * GRID_SIZE
 INPUT_DIM = OBS_DIM + 4
@@ -79,7 +82,7 @@ def n_params(hidden: int, depth: int = DEPTH) -> int:
 def hidden_for_multiplier(mult: float) -> int:
     """Smallest hidden width whose param count is >= mult x the baseline."""
     target = mult * n_params(BASE_HIDDEN)
-    h = BASE_HIDDEN
+    h = 8
     while n_params(h) < target:
         h += 1
     return h
@@ -88,13 +91,16 @@ def hidden_for_multiplier(mult: float) -> int:
 # --------------------------------------------------------------------------- #
 # Data
 # --------------------------------------------------------------------------- #
+def row_hash(obs_row: torch.Tensor, action_row: torch.Tensor) -> bytes:
+    # Normalize to uint8 so float32 (old pools) and uint8 (new pools) agree.
+    a = int(action_row.argmax())
+    data = obs_row.to(torch.uint8).numpy().tobytes()
+    return hashlib.md5(data + a.to_bytes(1, "little")).digest()
+
+
 def transition_hashes(ds) -> set:
-    hs = set()
-    obs, acts = ds["obs"], ds["actions"]
-    for i in range(obs.shape[0]):
-        a = int(acts[i].argmax())
-        hs.add(hashlib.md5(obs[i].numpy().tobytes() + a.to_bytes(1, "little")).digest())
-    return hs
+    return {row_hash(ds["obs"][i], ds["actions"][i])
+            for i in range(ds["obs"].shape[0])}
 
 
 def get_pool(n: int, seed: int, name: str):
@@ -124,9 +130,7 @@ def get_eval_set(train_pool, n_target: int = 4000, seed: int = 777):
     raw = get_pool(n_target * 2, seed=seed, name="eval_raw")
     keep = []
     for i in range(raw["obs"].shape[0]):
-        a = int(raw["actions"][i].argmax())
-        key = hashlib.md5(raw["obs"][i].numpy().tobytes() + a.to_bytes(1, "little")).digest()
-        if key not in train_hashes:
+        if row_hash(raw["obs"][i], raw["actions"][i]) not in train_hashes:
             keep.append(i)
         if len(keep) >= n_target:
             break
@@ -140,24 +144,88 @@ def get_eval_set(train_pool, n_target: int = 4000, seed: int = 777):
 # --------------------------------------------------------------------------- #
 # Train + evaluate
 # --------------------------------------------------------------------------- #
-def train(data, hidden: int, epochs: int, seed: int = 0):
-    torch.manual_seed(seed)
-    obs, actions = data["obs"], data["actions"]
-    targets = data["next_obs"].argmax(1).long()
+VAL_EVERY = 5  # epochs between held-out loss evals during training
+
+
+@torch.no_grad()
+def heldout_loss(model, obs, actions, targets, batch: int = 4096) -> float:
+    """Mean per-cell cross-entropy on (already on-device) eval tensors."""
+    model.eval()
+    ce = 0.0
+    for s in range(0, obs.shape[0], batch):
+        sl = slice(s, s + batch)
+        ce += F.cross_entropy(model(obs[sl], actions[sl]), targets[sl],
+                              reduction="sum").item()
+    return ce / targets.numel()
+
+
+def update_live_plot(history, label):
+    """Rewrite live_loss.png so training progress can be watched mid-run."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.6, 4.6))
+    eps = [h["epoch"] for h in history]
+    ax.plot(eps, [h["train_loss"] for h in history],
+            color="0.6", linewidth=1.5, label="train loss")
+    val = [(h["epoch"], h["val_loss"]) for h in history if h["val_loss"] is not None]
+    if val:
+        ax.plot([v[0] for v in val], [v[1] for v in val],
+                color="0.0", linewidth=2, marker="o", markersize=3.5,
+                label="held-out loss")
+    ax.set_xscale("log")
+    ax.set_xlabel("epoch  (log scale)")
+    ax.set_ylabel("per-cell cross-entropy")
+    ax.set_title(f"Training — {label}", fontsize=11)
+    ax.legend(frameon=False)
+    ax.grid(True, color="0.9")
+    fig.tight_layout()
+    fig.savefig(EXPDIR / "live_loss.png", dpi=110)
+    plt.close(fig)
+
+
+def train(data, hidden: int, epochs: int, eval_ds=None, label="",
+          batch: int = BATCH, lr: float = LR):
+    torch.manual_seed(0)
+    # Pools may be uint8 (4x smaller; a 10M pool doesn't fit as float32).
+    # Keep them compact on-device and cast per batch.
+    obs = data["obs"].to(DEVICE)
+    actions = data["actions"].to(DEVICE)
+    next_obs = data["next_obs"].to(DEVICE)
     n = obs.shape[0]
-    model = WorldModel(hidden)
-    opt = torch.optim.Adam(model.parameters(), lr=LR)
-    for _ in range(epochs):
+    model = WorldModel(hidden).to(DEVICE)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+
+    if eval_ds is not None:
+        eobs = eval_ds["obs"].to(DEVICE)
+        eact = eval_ds["actions"].to(DEVICE)
+        etgt = eval_ds["next_obs"].argmax(1).long().to(DEVICE)
+    history = []
+    val_every = max(VAL_EVERY, epochs // 50)  # cap val evals at ~50 per run
+
+    for ep in range(1, epochs + 1):
         model.train()
-        perm = torch.randperm(n)
-        for s in range(0, n, BATCH):
-            b = perm[s:s + BATCH]
-            logits = model(obs[b], actions[b])
-            loss = F.cross_entropy(logits, targets[b])
+        perm = torch.randperm(n, device=DEVICE)
+        # Accumulate on-device; a per-step .item() would force a GPU sync.
+        ep_loss = torch.zeros((), device=DEVICE)
+        for s in range(0, n, batch):
+            b = perm[s:s + batch]
+            logits = model(obs[b].float(), actions[b].float())
+            loss = F.cross_entropy(logits, next_obs[b].argmax(1))
             opt.zero_grad()
             loss.backward()
             opt.step()
-    return model
+            ep_loss += loss.detach() * b.shape[0]
+        if eval_ds is not None:
+            do_val = ep == 1 or ep == epochs or ep % val_every == 0
+            history.append({
+                "epoch": ep,
+                "train_loss": ep_loss.item() / n,
+                "val_loss": heldout_loss(model, eobs, eact, etgt) if do_val else None,
+            })
+            update_live_plot(history, label)
+    return model, history
 
 
 @torch.no_grad()
@@ -170,8 +238,9 @@ def evaluate_onestep(model, eval_ds, batch: int = 2048):
     actually carry the snake/food, plus head/food localization.
     """
     model.eval()
-    obs, actions = eval_ds["obs"], eval_ds["actions"]
-    targets = eval_ds["next_obs"].argmax(1).long()  # (N, H, W) labels
+    obs = eval_ds["obs"].to(DEVICE)
+    actions = eval_ds["actions"].to(DEVICE)
+    targets = eval_ds["next_obs"].argmax(1).long().to(DEVICE)  # (N, H, W) labels
     n = obs.shape[0]
     ce_sum = 0.0
     cell_total = 0
@@ -225,20 +294,19 @@ def evaluate_rollout(model, seeds=range(24), steps: int = 30):
     for sd in seeds:
         real = SnakeEnv()
         real.reset(seed=sd)
-        dlabels = torch.from_numpy(real._labels()).long()
+        dlabels = torch.from_numpy(real._labels()).long().to(DEVICE)
         head_hits = 0.0
         active_sum = 0.0
         first_head_div = steps
-        t = 0
         for t in range(steps):
             action = greedy_action(real._snake, real._food, real._direction)
-            oh = F.one_hot(torch.tensor(action), num_classes=4).float().unsqueeze(0)
+            oh = F.one_hot(torch.tensor(action, device=DEVICE), num_classes=4).float().unsqueeze(0)
             dobs = F.one_hot(dlabels, num_classes=4).permute(2, 0, 1).float().unsqueeze(0)
             logits = model(dobs, oh)[0]  # (4, H, W)
             dhead = logits[HEAD].reshape(-1).argmax()
             dlabels = logits.argmax(0)
             _, _, done, _ = real.step(action)
-            rlabels = torch.from_numpy(real._labels()).long()
+            rlabels = torch.from_numpy(real._labels()).long().to(DEVICE)
             rhead = (rlabels == HEAD).reshape(-1).float().argmax()
             hit = bool((dhead == rhead).item())
             head_hits += 1.0 if hit else 0.0
@@ -276,7 +344,7 @@ def run_cell(data, hidden, epochs, eval_ds, label, key):
               f"track={m['rollout_head_track']:.3f}")
         return m
     t0 = time.time()
-    model = train(data, hidden, epochs)
+    model, history = train(data, hidden, epochs, eval_ds=eval_ds, label=label)
     m = evaluate_onestep(model, eval_ds)
     m.update(evaluate_rollout(model))
     params = sum(p.numel() for p in model.parameters())
@@ -288,6 +356,7 @@ def run_cell(data, hidden, epochs, eval_ds, label, key):
         epochs=epochs,
         flops=6 * params * train_n * epochs,
         seconds=round(time.time() - t0, 1),
+        history=history,
     )
     print(f"  [{label}] params={params:,} data={train_n} epochs={epochs} "
           f"-> loss={m['loss']:.3f} active={m['active_acc']:.3f} "
@@ -330,6 +399,7 @@ def heatmap(ax, grid, row_labels, col_labels, title, xlabel, ylabel,
 def main():
     print("Snake world-model scaling experiment")
     print("=" * 60)
+    print(f"device={DEVICE}")
     load_cache()
 
     # Data pools (nested subsets of a single 2000-transition pool) + eval set.

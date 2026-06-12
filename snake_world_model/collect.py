@@ -1,9 +1,10 @@
 """Collect a transition dataset for training a Snake world model.
 
-Saves three tensors to transitions.pt:
-  obs:       (N, 4, H, W)  float32  – state before action
-  actions:   (N, 4)         float32  – one-hot action
-  next_obs:  (N, 4, H, W)  float32  – resulting state
+Saves three tensors to transitions.pt (uint8 one-hots; cast to float at train
+time — at millions of transitions float32 buffers no longer fit in RAM):
+  obs:       (N, 4, H, W)  – state before action
+  actions:   (N, 4)        – one-hot action
+  next_obs:  (N, 4, H, W)  – resulting state
 
 Terminal transitions are skipped so every next_obs is a valid live state.
 Episodes cycle through epsilons [1.0, 0.75, 0.4, 0.1, 0.0] for diversity.
@@ -46,9 +47,9 @@ def to_tensor(obs):
 
 
 def collect(n):
-    obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
-    act_buf = torch.zeros(n, 4)
-    next_obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE)
+    obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE, dtype=torch.uint8)
+    act_buf = torch.zeros(n, 4, dtype=torch.uint8)
+    next_obs_buf = torch.zeros(n, 4, GRID_SIZE, GRID_SIZE, dtype=torch.uint8)
 
     env = SnakeEnv()
     seen = set()

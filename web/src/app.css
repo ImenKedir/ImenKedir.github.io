@@ -1,0 +1,154 @@
+:root {
+	--serif: 'Iowan Old Style', 'Charter', Georgia, 'Times New Roman', serif;
+	--mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+	--ink: #111;
+	--faint: #757575;
+	--hairline: #e3e3e3;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: #fff;
+	color: var(--ink);
+	font-family: var(--serif);
+	font-size: 17px;
+	line-height: 1.72;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+main {
+	max-width: 39rem;
+	margin: 0 auto;
+	padding: 0 1.5rem 7rem;
+}
+
+h1 {
+	font-size: 1.85rem;
+	font-weight: 600;
+	line-height: 1.25;
+	letter-spacing: -0.012em;
+	margin: 3.5rem 0 0.5rem;
+}
+
+h2 {
+	font-family: var(--mono);
+	font-size: 0.72rem;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.18em;
+	margin: 4rem 0 1.25rem;
+}
+
+h2::before {
+	content: '';
+	display: block;
+	width: 2rem;
+	border-top: 1px solid var(--ink);
+	margin-bottom: 1.25rem;
+}
+
+p {
+	margin: 1.1rem 0;
+}
+
+a {
+	color: var(--ink);
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 3px;
+	text-decoration-color: #999;
+}
+
+a:hover {
+	text-decoration-color: var(--ink);
+}
+
+ul {
+	padding-left: 1.1rem;
+}
+
+li {
+	margin: 0.5rem 0;
+}
+
+strong {
+	font-weight: 600;
+}
+
+em {
+	font-style: italic;
+}
+
+table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 2rem 0;
+	font-family: var(--mono);
+	font-size: 0.78rem;
+	border-top: 1px solid var(--ink);
+	border-bottom: 1px solid var(--ink);
+}
+
+td {
+	padding: 0.55rem 0;
+	border-bottom: 1px solid var(--hairline);
+}
+
+tr:last-child td {
+	border-bottom: none;
+}
+
+td:last-child {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+code {
+	font-family: var(--mono);
+	font-size: 0.82em;
+	background: #f4f4f4;
+	padding: 0.08em 0.32em;
+}
+
+pre {
+	border: 1px solid var(--ink);
+	padding: 1rem 1.25rem;
+	margin: 1.75rem 0;
+	overflow-x: auto;
+	line-height: 1.55;
+}
+
+pre code {
+	background: none;
+	padding: 0;
+	font-size: 0.74rem;
+}
+
+/* grayscale syntax highlighting */
+.tok-k {
+	font-weight: 700;
+}
+.tok-c {
+	color: var(--faint);
+	font-style: italic;
+}
+.tok-s {
+	color: #555;
+}
+.tok-n {
+	color: #444;
+	font-weight: 600;
+}
+
+.meta {
+	font-family: var(--mono);
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.14em;
+	color: var(--faint);
+}

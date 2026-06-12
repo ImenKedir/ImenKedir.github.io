@@ -1,0 +1,7 @@
+dropped 3083 eval-colliding transitions
+   50,000: loss=0.0537 active=91.3% track=60.0% (20s)
+  100,000: loss=0.0315 active=95.6% track=73.1% (37s)
+  200,000: loss=0.0189 active=96.6% track=87.6% (101s)
+  500,000: loss=0.0104 active=97.5% track=87.9% (268s)
+1,000,000: loss=0.0077 active=97.8% track=86.3% (436s)
+2,000,000: loss=0.0066 active=98.0% track=79.5% (1382s)
