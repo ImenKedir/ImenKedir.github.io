@@ -112,7 +112,7 @@ This isn't really a learning failure. The model spreads food probability evenly 
 I think this is a fundamental limitation with how we've architected the model and the system. We could try introduce a random latent variable, or reformulate this as an autoregressive language modeling problem where we sample cells on the board one at a time in a causal way. I'll leave this blog post here. We can figure that out in a follow-up.
 
 <footer>
-	<a href="https://github.com/ImenKedir/world-model">code on github</a>
+	<a href="https://github.com/ImenKedir/ImenKedir.github.io">code on github</a>
 </footer>
 
 <style>
