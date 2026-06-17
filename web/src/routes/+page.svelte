@@ -12,8 +12,8 @@
 
 <h1>Imen Kedir</h1>
 <p class="lede">
-	I'm Imen. Stanford CS '25. I think neural networks are the coolest thing humanity has, and this
-	is where I document my tinkering with them.
+	I'm Imen. Stanford CS '25. This is a blog series where I tinker with neural networks and try
+	to build up intuition from first principles.
 </p>
 <ul class="links">
 	<li><a href="https://x.com/ImenKedir">twitter</a></li>

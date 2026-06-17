@@ -2,6 +2,7 @@
 	import Demo from '$lib/snake/Demo.svelte';
 	import TensorFig from '$lib/snake/TensorFig.svelte';
 	import ArchFig from '$lib/snake/ArchFig.svelte';
+	import FoodFailureFig from '$lib/snake/FoodFailureFig.svelte';
 	import { base } from '$app/paths';
 </script>
 
@@ -19,11 +20,9 @@
 
 I wanted to find out what the simplest world model that I could train was. I am a member of the permanent underclass, so all the compute I have to offer is the M4 MacBook I have with its 48GB of unified memory.
 
-I think a simple world would be Snake. It's mostly deterministic and it's easy to represent as a tensor.
-
 ## The world is a 10×10×4 tensor
 
-I think the simplest representation is the grid itself. Snake lives on a 10×10 grid, and every cell is exactly one of four things: `empty / body / head / food`. A frame is just a 10×10 grid of 4-way labels. One-hot those labels and you get a 10×10×4 tensor. That's the whole world. 400 numbers, all of them 0 or 1.
+I think Snake is a good candidate because it's mostly deterministic and easy to represent as a tensor. The most intuitive representation for me is the 10×10 grid itself, where every cell is exactly one of four things: `empty / body / head / food`. That way a frame is just a 10×10 grid of 4-way labels. One-hot those labels and you get a 10×10×4 tensor. That's the whole world. 400 numbers, all of them 0 or 1.
 
 <TensorFig />
 
@@ -107,9 +106,48 @@ Both grids start from the same opening. The left is the real simulator. The righ
 
 You might have noticed that after the snake eats the food, the model never predicts where the next food is going to spawn. It actually just predicts that none of the cells will have the food.
 
-This isn't really a learning failure. The model spreads food probability evenly across the remaining empty cells, which is basically the right answer. The problem is how we decode: I just take the highest-probability label for each cell, and empty wins everywhere. So the food vanishes even though the model learned the right distribution.
+This isn't really a learning failure. I ran the actual exported checkpoint on a transition where the snake has just eaten. Here is the final `4×10×10` probability tensor the model produces.
 
-I think this is a fundamental limitation with how we've architected the model and the system. We could try introduce a random latent variable, or reformulate this as an autoregressive language modeling problem where we sample cells on the board one at a time in a causal way. I'll leave this blog post here. We can figure that out in a follow-up.
+<FoodFailureFig />
+
+The problem is the independence assumption hiding inside the head. The model predicts 400 logits: 100 separate cells, each doing its own little 4-way classification. So it is basically saying:
+
+<div class="math">
+	<span>P(s<sub>next</sub> | s, a)</span>
+	<span>≈</span>
+	<span>P(cell<sub>1</sub>) × P(cell<sub>2</sub>) × ... × P(cell<sub>100</sub>)</span>
+</div>
+
+or, more compactly:
+
+<div class="math">
+	<span>P(s<sub>next</sub>)</span>
+	<span>≈</span>
+	<span>
+		<span class="prod">
+			<span class="prod-limit">100</span>
+			<span class="prod-symbol">∏</span>
+			<span class="prod-limit">i=1</span>
+		</span>
+		P(cell<sub>i</sub>)
+	</span>
+</div>
+
+That assumption is kinda fine when the next frame is deterministic. If the head moves right, one specific cell becomes head, another becomes body, the tail maybe disappears. Local classification can fake that pretty well.
+
+Food is the part where the assumption becomes false. The next food location is not 100 independent decisions. It is one joint decision over the empty cells. The thing we actually want is a distribution over whole boards:
+
+<div class="math">
+	<span>P(s<sub>next</sub> | s, a)</span>
+</div>
+
+where the model can assign probability to "food is in exactly this one empty cell, and nowhere else." The current head can't naturally say that. It can only say "this cell has a little food probability" 100 times.
+
+The cursed version would be a classifier over whole boards. There are 100 cells and 4 labels per cell, so that would be `4^100` classes, which is around `1.6 × 10^60`. Absolutely not. My laptop would simply leave the family.
+
+So the model has learned a reasonable fuzzy answer, and then my decoder destroys it. I take the argmax independently at every cell. Empty/body/head are sharper local predictions, so they beat food everywhere, and the food disappears.
+
+I think this is the actual limitation of this architecture. A cleaner next step is to make the board autoregressive: predict one cell, then the next cell conditioned on what we've already sampled, and keep going until the whole 10×10 grid is filled in. Each step is still only a 4-way classification, but now the model can represent global constraints like "there should be exactly one food." That feels like the follow-up.
 
 <footer>
 	<a href="https://github.com/ImenKedir/ImenKedir.github.io">code on github</a>
@@ -141,5 +179,39 @@ I think this is a fundamental limitation with how we've architected the model an
 	}
 	img.half {
 		max-width: 22rem;
+		margin-left: auto;
+		margin-right: auto;
+	}
+	.math {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.55rem;
+		flex-wrap: wrap;
+		margin: 1.6rem 0;
+		font-family: var(--serif);
+		font-size: 1.08rem;
+		line-height: 1.5;
+		font-style: italic;
+	}
+	.math .prod {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.02rem;
+		margin: 0 0.15rem;
+		font-style: normal;
+		line-height: 1;
+		vertical-align: middle;
+	}
+	.math .prod-symbol {
+		font-size: 1.5rem;
+		line-height: 0.9;
+	}
+	.math .prod-limit {
+		font-size: 0.52rem;
+		font-style: normal;
+		line-height: 1;
 	}
 </style>
