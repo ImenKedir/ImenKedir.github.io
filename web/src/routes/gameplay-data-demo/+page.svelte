@@ -842,24 +842,6 @@
 		</div>
 	</section>
 
-	<section class="pilots" aria-labelledby="pilots-title">
-		<div class="section-heading compact">
-			<p class="eyebrow">Pilot proposal</p>
-			<h2 id="pilots-title">Two practical starting points</h2>
-		</div>
-		<div class="pilot-grid">
-			<article>
-				<span>Pilot A</span>
-				<h3>League trajectory dataset</h3>
-				<p>100–500 hours of League gameplay with synchronized screen video, keyboard/mouse events, metadata, and QA.</p>
-			</article>
-			<article>
-				<span>Pilot B</span>
-				<h3>Custom game campaign</h3>
-				<p>Mercor specifies a game, task, and data schema. We recruit users and deliver targeted sessions.</p>
-			</article>
-		</div>
-	</section>
 </section>
 
 <style>
@@ -952,8 +934,7 @@
 	.viewer-section,
 	.clip-library,
 	.schema,
-	.two-column,
-	.pilots {
+	.two-column {
 		margin: 0;
 		padding-top: 4rem;
 	}
@@ -1164,8 +1145,7 @@
 	.player-card,
 	.metadata-card,
 	.state-card,
-	.capacity-card,
-	.pilot-grid article {
+	.capacity-card {
 		border: 1px solid var(--ink);
 		background: #fff;
 	}
@@ -1567,15 +1547,13 @@
 	}
 
 	.metadata-card h3,
-	.capacity-card h3,
-	.pilot-grid h3 {
+	.capacity-card h3 {
 		margin: 0 0 0.4rem;
 		font-size: 1.05rem;
 		line-height: 1.25;
 	}
 
-	.metadata-card p,
-	.pilot-grid p {
+	.metadata-card p {
 		margin: 0 0 1rem;
 		color: #444;
 		font-size: 0.92rem;
@@ -1885,37 +1863,10 @@
 		color: var(--faint);
 	}
 
-	.pilot-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.9rem;
-	}
-
-	.pilot-grid article {
-		border-color: var(--hairline);
-		padding: 1rem;
-	}
-
-	.pilot-grid span {
-		display: block;
-		margin-bottom: 0.55rem;
-		font-family: var(--mono);
-		font-size: 0.66rem;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: var(--faint);
-	}
-
-	.pilot-grid p {
-		color: #444;
-	}
-
-
 	@media (max-width: 920px) {
 		.viewer-grid,
 		.schema-grid,
-		.two-column,
-		.pilot-grid {
+		.two-column {
 			grid-template-columns: 1fr;
 		}
 
