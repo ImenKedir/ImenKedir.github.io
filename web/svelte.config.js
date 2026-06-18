@@ -23,7 +23,7 @@ const config = {
 		// Set by CI when deploying under a subpath (e.g. /repo-name on GitHub Pages).
 		paths: { base: process.env.BASE_PATH || '' },
 		// With ssr=false the crawler can't discover routes; list them explicitly.
-		prerender: { entries: ['/', '/snake'] }
+		prerender: { entries: ['/', '/snake', '/gameplay-data-demo'] }
 	}
 };
 
