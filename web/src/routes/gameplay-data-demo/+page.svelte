@@ -165,14 +165,6 @@
 			: clipLibrary;
 		return prioritizeGameDiversity(clips);
 	});
-	const representedGames = $derived.by(() => {
-		const seen = new Map<string, ClipSummary>();
-		for (const clip of clipLibrary) {
-			const label = gameLabel(clip);
-			if (!seen.has(label)) seen.set(label, clip);
-		}
-		return [...seen.values()];
-	});
 	const selectedSession = $derived(loadedSessions[selectedSessionId] ?? sessions[0] ?? null);
 	const effectiveDurationMs = $derived(
 		videoDurationMs || selectedSession?.durationMs || lastEventTime(selectedSession)
@@ -694,25 +686,13 @@
 					and the list is ordered to show breadth across the bucket.
 				</p>
 			</div>
-			{#if representedGames.length}
-				<div class="game-strip" aria-label="games represented in the sample bucket">
-					{#each representedGames as game (game.id)}
-						<div class="game-pill">
-							{#if gameLogo(game)}
-								<img src={gameLogo(game)} alt="" loading="lazy" />
-							{/if}
-							<span>{gameLabel(game)}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
 			<div class="library-toolbar">
 				<label>
 					<span>Filter</span>
 					<input bind:value={clipSearch} type="search" placeholder="game or session id" />
 				</label>
 				<span class="library-count">
-					{formatNumber(representedGames.length)} games · {formatNumber(filteredClips.length)} / {formatNumber(data.totalSessions)} clips
+					{formatNumber(filteredClips.length)} / {formatNumber(data.totalSessions)} clips
 				</span>
 			</div>
 			{#if clipLibrary.length}
@@ -1023,31 +1003,12 @@
 		color: var(--faint);
 	}
 
-	.game-strip {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin: 1rem 0 0.9rem;
-	}
-
-	.game-pill,
 	.game-chip {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.6rem;
 	}
 
-	.game-pill {
-		padding: 0.4rem 0.55rem 0.4rem 0.4rem;
-		border: 1px solid var(--hairline);
-		background: #fff;
-		font-family: var(--mono);
-		font-size: 0.64rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-	}
-
-	.game-pill img,
 	.game-chip img {
 		display: block;
 		width: 2rem;
