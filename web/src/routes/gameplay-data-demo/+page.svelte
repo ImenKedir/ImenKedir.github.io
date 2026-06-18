@@ -178,7 +178,7 @@
 		videoDurationMs || selectedSession?.durationMs || lastEventTime(selectedSession)
 	);
 	const activeEvents = $derived.by(() => findActiveEvents(selectedSession, currentTimeMs));
-	const activeKeys = $derived.by(() => activeEventLabels(activeEvents, 'key'));
+	const activeKeys = $derived.by(() => pressedKeyLabels(selectedSession, currentTimeMs));
 	const pressedMouseButtons = $derived.by(() => pressedMouseButtonLabels(selectedSession, currentTimeMs));
 	const recentMouseButtons = $derived.by(() => recentMouseButtonLabels(activeEvents, currentTimeMs));
 	const cursor = $derived.by(() => latestCursor(selectedSession, currentTimeMs));
@@ -332,12 +332,22 @@
 		currentTimeMs = Math.round(next * 1000);
 	}
 
-	function activeEventLabels(events: InputEvent[], kind: 'key' | 'mouse') {
-		const labels = new Set<string>();
-		for (const event of events) {
-			if (kind === 'key' && event.type === 'keydown' && event.key) labels.add(event.key);
+	function pressedKeyLabels(session: DemoSession | null, timestampMs: number) {
+		const pressed = new Set<string>();
+		if (!session) return pressed;
+		const keyboardLabels = new Set(keyboardRows.flat());
+		const seen = new Set<string>();
+		const start = Math.min(session.events.length - 1, lowerBound(session.events, timestampMs + 80));
+		for (let index = start; index >= 0; index -= 1) {
+			const event = session.events[index];
+			if (timestampMs - event.timestampMs > 10000 || seen.size >= keyboardLabels.size) break;
+			if (event.type !== 'keydown' && event.type !== 'keyup') continue;
+			const key = event.key;
+			if (!key || !keyboardLabels.has(key) || seen.has(key)) continue;
+			seen.add(key);
+			if (event.type === 'keydown') pressed.add(key);
 		}
-		return labels;
+		return pressed;
 	}
 
 	function pressedMouseButtonLabels(session: DemoSession | null, timestampMs: number) {
