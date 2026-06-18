@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build compact static data for the League gameplay data demo."""
+"""Build compact static data for the gameplay data demo."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MANIFEST = "https://f005.backblazeb2.com/file/league-data-sample-001/manifest.json"
-DEFAULT_SESSION_IDS = ["0J8jEENTbG9", "1BsIkolvULE", "0aSpcSrKjQI", "0CAUB0gSoQM"]
+DEFAULT_MANIFEST = "https://f005.backblazeb2.com/file/all-game-data-sample-001/manifest.json"
+DEFAULT_SESSION_IDS: list[str] = []
 KEY_NAMES = {
     "1": "Esc",
     "2": "1",
@@ -72,6 +72,10 @@ def fetch_json(url: str) -> dict[str, Any]:
 def fetch_gzip_text(url: str) -> str:
     with urllib.request.urlopen(url, timeout=60) as response:
         return gzip.decompress(response.read()).decode("utf-8", errors="replace")
+
+
+def display_game_name(manifest_game: dict[str, str], fallback: str) -> str:
+    return manifest_game.get("gameName") or manifest_game.get("game") or fallback
 
 
 def normalize_event(row: dict[str, str], session_id: str, game: str) -> dict[str, Any] | None:
@@ -167,7 +171,10 @@ def summarize_session(manifest_game: dict[str, str], game_name: str) -> dict[str
     return {
         "id": manifest_game["publicId"],
         "game": game_name,
-        "description": "League of Legends ranked or normal gameplay capture with synchronized input telemetry.",
+        "gameType": manifest_game.get("gameType"),
+        "gameName": manifest_game.get("gameName") or game_name,
+        "source": manifest_game.get("source"),
+        "description": f"{game_name} gameplay capture with synchronized input telemetry.",
         "recordedAt": summary.get("gamePlayedAt"),
         "durationMs": duration_ms,
         "eventCount": event_total,
@@ -208,6 +215,9 @@ def summarize_clip(manifest_game: dict[str, str], game_name: str) -> dict[str, A
         "dataUrl": manifest_game["data"],
         "eventsUrl": manifest_game["events"],
         "game": game_name,
+        "gameType": manifest_game.get("gameType"),
+        "gameName": manifest_game.get("gameName") or game_name,
+        "source": manifest_game.get("source"),
         "recordedAt": summary.get("gamePlayedAt"),
         "durationMs": int(recording.get("recordedDurationMs") or (ffprobe.get("durationS") or 0) * 1000),
         "resolution": {
@@ -229,10 +239,19 @@ def main() -> None:
 
     manifest = fetch_json(args.manifest)
     by_id = {game["publicId"]: game for game in manifest["games"]}
-    sessions = [summarize_session(by_id[session_id], manifest.get("game", "League of Legends")) for session_id in args.sessions]
-    game_name = manifest.get("game", "League of Legends")
+    selected_games = [by_id[session_id] for session_id in args.sessions] if args.sessions else manifest["games"]
+    fallback_game_name = manifest.get("game", "Gameplay")
+    sessions = [
+        summarize_session(game, display_game_name(game, fallback_game_name))
+        for game in selected_games
+    ]
     with ThreadPoolExecutor(max_workers=16) as executor:
-        clip_library = list(executor.map(lambda game: summarize_clip(game, game_name), manifest["games"]))
+        clip_library = list(
+            executor.map(
+                lambda game: summarize_clip(game, display_game_name(game, fallback_game_name)),
+                manifest["games"],
+            )
+        )
 
     output = {
         "sourceManifest": args.manifest,
@@ -242,7 +261,7 @@ def main() -> None:
         "source": manifest.get("source"),
         "totalSessions": manifest.get("count"),
         "filesPerSession": manifest.get("filesPerGame"),
-        "generatedFromSessions": args.sessions,
+        "generatedFromSessions": [game["publicId"] for game in selected_games],
         "generatedAt": "2026-06-17",
         "clipLibrary": clip_library,
         "notes": [

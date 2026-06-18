@@ -19,6 +19,9 @@
 	type DemoSession = {
 		id: string;
 		game: string;
+		gameType?: string;
+		gameName?: string;
+		source?: string;
 		description: string;
 		recordedAt?: string;
 		durationMs: number;
@@ -48,6 +51,9 @@
 		dataUrl: string;
 		eventsUrl: string;
 		game?: string;
+		gameType?: string;
+		gameName?: string;
+		source?: string;
 		recordedAt?: string;
 		durationMs?: number;
 		resolution?: { width?: number; height?: number };
@@ -81,6 +87,27 @@
 	let seekTarget = $state(0);
 	let clipSearch = $state('');
 	let animationFrame = 0;
+	const gameLogoByType: Record<string, string> = {
+		LOL: 'lol.png',
+		TFT: 'tft.png',
+		VAL: 'valorant.png',
+		CS2: 'cs2.png',
+		DL: 'deadlock.png',
+		MR: 'marvel-rivals.png',
+		R6: 'r6-siege.png'
+	};
+	const gameLogoByName: Record<string, string> = {
+		'League of Legends': 'lol.png',
+		'Teamfight Tactics': 'tft.png',
+		Valorant: 'valorant.png',
+		'Counter-Strike 2': 'cs2.png',
+		Deadlock: 'deadlock.png',
+		'Marvel Rivals': 'marvel-rivals.png',
+		'Rainbow Six Siege': 'r6-siege.png',
+		'R6 Siege': 'r6-siege.png',
+		CS2: 'cs2.png',
+		TFT: 'tft.png'
+	};
 	const gameLogos = [
 		['League of Legends', 'lol.png'],
 		['Valorant', 'valorant.png'],
@@ -131,9 +158,20 @@
 	const filteredClips = $derived.by(() => {
 		const query = clipSearch.trim().toLowerCase();
 		const clips = query
-			? clipLibrary.filter((clip) => clip.id.toLowerCase().includes(query))
+			? clipLibrary.filter((clip) => {
+					const haystack = `${clip.id} ${gameLabel(clip)} ${clip.gameType ?? ''}`.toLowerCase();
+					return haystack.includes(query);
+				})
 			: clipLibrary;
-		return [...clips].sort((left, right) => Number(hasInteractiveTelemetry(right)) - Number(hasInteractiveTelemetry(left)));
+		return prioritizeGameDiversity(clips);
+	});
+	const representedGames = $derived.by(() => {
+		const seen = new Map<string, ClipSummary>();
+		for (const clip of clipLibrary) {
+			const label = gameLabel(clip);
+			if (!seen.has(label)) seen.set(label, clip);
+		}
+		return [...seen.values()];
 	});
 	const selectedSession = $derived(loadedSessions[selectedSessionId] ?? sessions[0] ?? null);
 	const effectiveDurationMs = $derived(
@@ -185,7 +223,7 @@
 		if (!loadedSessions[clip.id]) {
 			loadedSessions = {
 				...loadedSessions,
-				[clip.id]: clipToSession(clip, data?.game ?? 'League of Legends')
+				[clip.id]: clipToSession(clip, data?.game ?? 'Gameplay')
 			};
 		}
 		selectedSessionId = clip.id;
@@ -203,7 +241,10 @@
 		return {
 			id: clip.id,
 			game: clip.game ?? game,
-			description: 'Raw bucket clip. Video and package links are available; keyboard and mouse overlays are preprocessed for highlighted sessions.',
+			gameType: clip.gameType,
+			gameName: clip.gameName,
+			source: clip.source,
+			description: `${gameLabel(clip)} gameplay capture. Video and package links are available; keyboard and mouse overlays are preprocessed for highlighted sessions.`,
 			recordedAt: clip.recordedAt,
 			durationMs: clip.durationMs ?? 0,
 			eventCount: 0,
@@ -223,6 +264,46 @@
 
 	function hasInteractiveTelemetry(clip: ClipSummary) {
 		return Boolean(loadedSessions[clip.id]?.events.length);
+	}
+
+	function gameLabel(item: Pick<ClipSummary, 'game' | 'gameName'>) {
+		return item.gameName ?? item.game ?? 'Gameplay';
+	}
+
+	function gameLogo(item: Pick<ClipSummary, 'game' | 'gameName' | 'gameType'>) {
+		const fileName = item.gameType ? gameLogoByType[item.gameType] : undefined;
+		const fallbackFileName = gameLogoByName[gameLabel(item)];
+		const logo = fileName ?? fallbackFileName;
+		return logo ? `https://www.tryascent.gg/games/${logo}` : '';
+	}
+
+	function prioritizeGameDiversity(clips: ClipSummary[]) {
+		const interactive = clips.filter(hasInteractiveTelemetry);
+		const raw = clips.filter((clip) => !hasInteractiveTelemetry(clip));
+		return [...roundRobinByGame(interactive), ...roundRobinByGame(raw)];
+	}
+
+	function roundRobinByGame(clips: ClipSummary[]) {
+		const groups = new Map<string, ClipSummary[]>();
+		for (const clip of clips) {
+			const label = gameLabel(clip);
+			const group = groups.get(label) ?? [];
+			group.push(clip);
+			groups.set(label, group);
+		}
+		const result: ClipSummary[] = [];
+		let added = true;
+		while (added) {
+			added = false;
+			for (const group of groups.values()) {
+				const clip = group.shift();
+				if (clip) {
+					result.push(clip);
+					added = true;
+				}
+			}
+		}
+		return result;
 	}
 
 	function onLoadedMetadata() {
@@ -576,7 +657,7 @@
 
 				<aside class="metadata-card">
 					<p class="panel-label">Selected session</p>
-					<h3>{selectedSession.game}</h3>
+					<h3>{gameLabel(selectedSession)}</h3>
 					<p>{selectedSession.description}</p>
 					<dl>
 						<div><dt>Session ID</dt><dd>{selectedSession.id}</dd></div>
@@ -597,19 +678,31 @@
 		<section class="clip-library" aria-labelledby="clip-library-title">
 			<div class="section-heading compact">
 				<p class="eyebrow">Session selector</p>
-				<h2 id="clip-library-title">Select any clip in the sample bucket</h2>
+				<h2 id="clip-library-title">Select across the multi-game sample bucket</h2>
 				<p>
-					Choose a session to load it into the viewer. Highlighted sessions include preprocessed
-					keyboard and mouse overlays; every row links to the raw package files.
+					Choose any game sample to load it into the viewer. Interactive sessions are prioritized first,
+					and the list is ordered to show breadth across the bucket.
 				</p>
 			</div>
+			{#if representedGames.length}
+				<div class="game-strip" aria-label="games represented in the sample bucket">
+					{#each representedGames as game (game.id)}
+						<div class="game-pill">
+							{#if gameLogo(game)}
+								<img src={gameLogo(game)} alt="" loading="lazy" />
+							{/if}
+							<span>{gameLabel(game)}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
 			<div class="library-toolbar">
 				<label>
 					<span>Filter</span>
-					<input bind:value={clipSearch} type="search" placeholder="session id" />
+					<input bind:value={clipSearch} type="search" placeholder="game or session id" />
 				</label>
 				<span class="library-count">
-					{formatNumber(filteredClips.length)} / {formatNumber(data.totalSessions)} clips
+					{formatNumber(representedGames.length)} games · {formatNumber(filteredClips.length)} / {formatNumber(data.totalSessions)} clips
 				</span>
 			</div>
 			{#if clipLibrary.length}
@@ -624,7 +717,15 @@
 					{#each filteredClips as clip (clip.id)}
 						<div class:selected={clip.id === selectedSessionId} class="clip-row" role="row">
 							<button type="button" class="clip-select" onclick={() => selectClip(clip)}>
-								<strong>{clip.id}</strong>
+								<span class="game-chip">
+									{#if gameLogo(clip)}
+										<img src={gameLogo(clip)} alt="" loading="lazy" />
+									{/if}
+									<span>
+										<strong>{gameLabel(clip)}</strong>
+										<small>{clip.id}</small>
+									</span>
+								</span>
 								<small>{formatDuration(clip.durationMs ?? 0)} · {clip.resolution?.width ?? '—'}×{clip.resolution?.height ?? '—'} · {clip.fps ?? '—'} fps</small>
 							</button>
 							<span class:interactive={hasInteractiveTelemetry(clip)} class="telemetry-chip">
@@ -676,7 +777,7 @@
 						<tr><td>mouse_x / mouse_y</td><td>raw desktop cursor coordinates when present</td></tr>
 						<tr><td>button</td><td>left, right, middle, or raw button code</td></tr>
 						<tr><td>session_id</td><td>public session identifier from manifest</td></tr>
-						<tr><td>game</td><td>League of Legends in this sample bucket</td></tr>
+						<tr><td>game</td><td>game label from the multi-game manifest</td></tr>
 						<tr><td>recorded_at</td><td>session-level metadata timestamp when available</td></tr>
 					</tbody>
 				</table>
@@ -912,6 +1013,46 @@
 		color: var(--faint);
 	}
 
+	.game-strip {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 1rem 0 0.9rem;
+	}
+
+	.game-pill,
+	.game-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.game-pill {
+		padding: 0.4rem 0.55rem 0.4rem 0.4rem;
+		border: 1px solid var(--hairline);
+		background: #fff;
+		font-family: var(--mono);
+		font-size: 0.64rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.game-pill img,
+	.game-chip img {
+		display: block;
+		width: 2rem;
+		height: 2rem;
+		padding: 0.32rem;
+		border: 1px solid var(--ink);
+		background: var(--ink);
+		object-fit: contain;
+	}
+
+	.game-chip span {
+		display: grid;
+		gap: 0.12rem;
+	}
+
 	.clip-table {
 		max-height: 21rem;
 		overflow: auto;
@@ -953,7 +1094,7 @@
 
 	.clip-select {
 		display: grid;
-		gap: 0.15rem;
+		gap: 0.28rem;
 		width: 100%;
 		padding: 0;
 		border: 0;
