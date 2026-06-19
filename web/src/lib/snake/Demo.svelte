@@ -17,8 +17,8 @@
 	const env = new SnakeEnv();
 	let seed = $state(7);
 	let real: number[] = $state([]);
-	let dream: number[] = $state([]);
-	let dreamLabels: Uint8Array<ArrayBufferLike> = new Uint8Array(N);
+	let rollout: number[] = $state([]);
+	let rolloutLabels: Uint8Array<ArrayBufferLike> = new Uint8Array(N);
 
 	let playing = $state(true);
 	let autopilot = $state(true);
@@ -26,22 +26,22 @@
 	let gameOver = $state(false);
 	let step = $state(0);
 	let tracked = $state(0);
-	let dreamFoodGone = $state(false);
+	let rolloutFoodGone = $state(false);
 	let pendingAction = RIGHT;
-	let dreamRng = mulberry32(1234);
+	let rolloutRng = mulberry32(1234);
 
 	function reset(newSeed: number) {
 		seed = newSeed;
 		env.reset(seed);
-		dreamLabels = env.labels();
+		rolloutLabels = env.labels();
 		real = Array.from(env.labels());
-		dream = Array.from(dreamLabels);
+		rollout = Array.from(rolloutLabels);
 		step = 0;
 		tracked = 0;
 		gameOver = false;
-		dreamFoodGone = false;
+		rolloutFoodGone = false;
 		pendingAction = RIGHT;
-		dreamRng = mulberry32(seed * 7919 + 1);
+		rolloutRng = mulberry32(seed * 7919 + 1);
 		playing = true;
 	}
 
@@ -49,18 +49,18 @@
 		if (!model || gameOver) return;
 		const action = autopilot ? greedyAction(env.snake, env.food, env.direction) : pendingAction;
 
-		const logits = model.forward(dreamLabels, action);
-		dreamLabels = decode(logits, sampleFood, dreamRng);
-		dreamFoodGone = !dreamLabels.includes(FOOD);
+		const logits = model.forward(rolloutLabels, action);
+		rolloutLabels = decode(logits, sampleFood, rolloutRng);
+		rolloutFoodGone = !rolloutLabels.includes(FOOD);
 
 		const done = env.step(action);
 		const rl = env.labels();
 
 		step += 1;
-		if (rl.indexOf(HEAD) === dreamLabels.indexOf(HEAD)) tracked += 1;
+		if (rl.indexOf(HEAD) === rolloutLabels.indexOf(HEAD)) tracked += 1;
 
 		real = Array.from(rl);
-		dream = Array.from(dreamLabels);
+		rollout = Array.from(rolloutLabels);
 		if (done) {
 			gameOver = true;
 			playing = false;
@@ -103,7 +103,7 @@
 	{:else}
 		<div class="grids">
 			<div class="panel">
-				<div class="label">simulation</div>
+				<div class="label">environment</div>
 				<div class="grid">
 					{#each real as v, i (i)}
 						<div class="cell {cellClass(v)}"></div>
@@ -111,9 +111,9 @@
 				</div>
 			</div>
 			<div class="panel">
-				<div class="label">dream</div>
+				<div class="label">model rollout</div>
 				<div class="grid">
-					{#each dream as v, i (i)}
+					{#each rollout as v, i (i)}
 						<div class="cell {cellClass(v)} {v !== real[i] ? 'diverged' : ''}"></div>
 					{/each}
 				</div>
@@ -132,14 +132,14 @@
 		<div class="stats">
 			<span>step {step}</span>
 			<span>head tracked {tracked}/{step}</span>
-			<span class:alert={dreamFoodGone}>
-				{dreamFoodGone ? 'no food in dream' : 'food in dream'}
+			<span class:alert={rolloutFoodGone}>
+				{rolloutFoodGone ? 'no food in rollout' : 'food in rollout'}
 			</span>
 			{#if gameOver}<span class="alert">game over</span>{/if}
 		</div>
 		<figcaption>
-			arrows / wasd to steer (disables autopilot). the dream is fed only its own
-			predictions. It never sees the simulation after step 0.
+			arrows / wasd to steer (disables autopilot). the model rollout is fed only its own
+			predictions. It never sees the environment after step 0.
 		</figcaption>
 	{/if}
 </figure>

@@ -3,6 +3,7 @@
 	import TensorFig from '$lib/snake/TensorFig.svelte';
 	import ArchFig from '$lib/snake/ArchFig.svelte';
 	import FoodFailureFig from '$lib/snake/FoodFailureFig.svelte';
+	import AutoregressiveFig from '$lib/snake/AutoregressiveFig.svelte';
 	import { base } from '$app/paths';
 </script>
 
@@ -28,9 +29,9 @@ I think Snake is a good candidate because it's mostly deterministic and easy to 
 
 Given a state and an action there is exactly one correct next state. The one exception is the food: when the snake eats, the next food spawns on a random empty cell. Remember that. It's kinda the point of this whole blog post, outside of how easy it is to get started with world models.
 
-## Dumb architecture
+## Grug architecture
 
-I wanted the simplest thing that could possibly work, so: an MLP. Flatten the frame (400 numbers), tack on a one-hot action (4 more), push it through four hidden layers, and read out 400 logits, a little 4-way classification for every cell of the next frame. Train with cross-entropy. 1,200,528 parameters. My brain is smooth so I wanna be able to understand what is happening if it breaks.
+I wanted the simplest thing that could possibly work, very much in the spirit of [grug-brained engineering](https://grugbrain.dev/): an MLP. Flatten the frame (400 numbers), tack on a one-hot action (4 more), push it through four hidden layers, and read out 400 logits, a little 4-way classification for every cell of the next frame. Train with cross-entropy. 1,200,528 parameters. My brain is smooth, so I wanna be able to understand what is happening if it breaks.
 
 <ArchFig />
 
@@ -63,7 +64,7 @@ I think the most straightforward thing is the per-cell accuracy. We have a hundr
 - **active-cell accuracy**: only grade the cells that should have something in them (snake + food). The all-empty model gets exactly 0%.
 - **head accuracy**: is the head in the right cell?
 - **exact-frame match**: all 100 cells right.
-- **dream rollouts**: feed the model its own predictions for 30 steps and measure how long the dreamed head stays on the real head.
+- **model rollouts**: feed the model its own predictions for 30 steps and measure how long the predicted head stays on the real head.
 
 ## Try to get this model to learn something
 
@@ -77,7 +78,7 @@ So the first thing was trying to figure out how to get this thing to learn somet
 
 <img src="{base}/plots/scaling_surface.png" alt="3D wireframe surfaces: loss and active-cell accuracy over data and epochs" />
 
-**More data.** Loss keeps falling as you add transitions: head accuracy, dream rollouts, all of it.
+**More data.** Loss keeps falling as you add transitions: head accuracy, model rollouts, all of it.
 
 <img src="{base}/plots/scaling_data.png" alt="held-out loss (log-log) and accuracy metrics vs training data size" />
 
@@ -93,12 +94,12 @@ The final recipe: 2M transitions, 1.2M parameters, 100 epochs at batch 2048, abo
 | active-cell accuracy | 98.0% |
 | head accuracy | 99.0% |
 | exact-frame match | 87.0% |
-| 30-step dream, head on track | 96.2% |
+| 30-step model rollout, head on track | 96.2% |
 | mean steps before divergence | 23.3 |
 
-## Play in the dream
+## Run the model forward
 
-Both grids start from the same opening. The left is the real simulator. The right is the model predicting the next state: after step 0 it only ever sees its own predictions.
+Both grids start from the same opening. The left is the real environment. The right is the model running inference one step at a time: after step 0 it only ever sees its own predictions.
 
 <Demo />
 
@@ -110,18 +111,18 @@ This isn't really a learning failure. I ran the actual exported checkpoint on a 
 
 <FoodFailureFig />
 
-The problem is the independence assumption hiding inside the head. The model predicts 400 logits: 100 separate cells, each doing its own little 4-way classification. So it is basically saying:
+By making the final layer 400 logits, I basically turned the problem into 100 separate cells, each doing its own little 4-way classification. So the model is effectively saying:
 
 <div class="math">
 	<span>P(s<sub>next</sub> | s, a)</span>
 	<span>≈</span>
-	<span>P(cell<sub>1</sub>) × P(cell<sub>2</sub>) × ... × P(cell<sub>100</sub>)</span>
+	<span>P(cell<sub>1</sub> | s, a) × P(cell<sub>2</sub> | s, a) × ... × P(cell<sub>100</sub> | s, a)</span>
 </div>
 
 or, more compactly:
 
 <div class="math">
-	<span>P(s<sub>next</sub>)</span>
+	<span>P(s<sub>next</sub> | s, a)</span>
 	<span>≈</span>
 	<span>
 		<span class="prod">
@@ -129,13 +130,13 @@ or, more compactly:
 			<span class="prod-symbol">∏</span>
 			<span class="prod-limit">i=1</span>
 		</span>
-		P(cell<sub>i</sub>)
+		P(cell<sub>i</sub> | s, a)
 	</span>
 </div>
 
-That assumption is kinda fine when the next frame is deterministic. If the head moves right, one specific cell becomes head, another becomes body, the tail maybe disappears. Local classification can fake that pretty well.
+That assumption is mostly fine when each next cell's state can be deterministically derived from the current state and action, without depending on the predicted state of the other next cells. If the head moves right, one specific cell becomes head, another becomes body, and the tail maybe disappears. Local classification can fake that pretty well.
 
-Food is the part where the assumption becomes false. The next food location is not 100 independent decisions. It is one joint decision over the empty cells. The thing we actually want is a distribution over whole boards:
+Food is where the assumption breaks. Predicting the next state right after the snake eats is stochastic, because the food has to respawn somewhere. The next food location is not 100 independent decisions. It is one joint decision over the empty cells. The thing we actually want is a distribution over whole boards:
 
 <div class="math">
 	<span>P(s<sub>next</sub> | s, a)</span>
@@ -143,11 +144,19 @@ Food is the part where the assumption becomes false. The next food location is n
 
 where the model can assign probability to "food is in exactly this one empty cell, and nowhere else." The current head can't naturally say that. It can only say "this cell has a little food probability" 100 times.
 
-The cursed version would be a classifier over whole boards. There are 100 cells and 4 labels per cell, so that would be `4^100` classes, which is around `1.6 × 10^60`. Absolutely not. My laptop would simply leave the family.
+If we tried to make the final layer predict whole board states directly, each class would correspond to one possible board. With 100 cells and 4 possible labels per cell, that would be `4^100` classes, which is around `1.6 × 10^60`. Most of those boards are invalid, but the space is still exponential. That is not feasible, even if I were not GPU impoverished.
 
-So the model has learned a reasonable fuzzy answer, and then my decoder destroys it. I take the argmax independently at every cell. Empty/body/head are sharper local predictions, so they beat food everywhere, and the food disappears.
+Since the model cannot know where the food will go next, it learns the marginal answer: each plausible empty cell gets a little bit of food probability. If there are 90-ish empty cells, each one only gets around `1/90`. Then my "decoder" takes the argmax independently at every cell. Empty/body/head dominate locally, so they beat food everywhere, and the food disappears.
 
-I think this is the actual limitation of this architecture. A cleaner next step is to make the board autoregressive: predict one cell, then the next cell conditioned on what we've already sampled, and keep going until the whole 10×10 grid is filled in. Each step is still only a 4-way classification, but now the model can represent global constraints like "there should be exactly one food." That feels like the follow-up.
+I think this is the actual limitation of this architecture. The thing we need is a better factorization of the next-board distribution.
+
+One option would be to hand-design the factorization: first predict whether food should spawn somewhere else, then predict where the food should go. That would probably work for Snake. But it also feels like cheating, because the solution is not generic enough. I would be injecting too much specific knowledge about this environment directly into the model.
+
+A more general factorization is to model the board autoregressively, as a sequence of cells. Instead of predicting all 100 cells independently, turn the board into a sequence and predict one cell at a time. Each step is still only a 4-way classification, but later cells can condition on earlier cells. That gives the model a way to represent global constraints like "there should be exactly one food" without me hard-coding a special food-spawn head.
+
+<AutoregressiveFig />
+
+The board becomes a line of tokens, and the model no longer has to pretend all 100 output cells are independent. That feels like the follow-up.
 
 <footer>
 	<a href="https://github.com/ImenKedir/ImenKedir.github.io">code on github</a>
